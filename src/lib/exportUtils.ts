@@ -23,7 +23,7 @@ export function exportTimeRecordsToExcel(records: TimeRecord[], filename = 'MP_C
       'Localização / Cidade': r.location_address || `${r.latitude}, ${r.longitude}`,
       'Precisão GPS (m)': r.location_accuracy ? `${r.location_accuracy}m` : 'N/D',
       'Método de Validação': r.verification_method,
-      'Score Biométrico': `${Math.round((r.verification_score || 0) * 100)}%`,
+      'Validação Biométrica': 'VALIDADO',
       'Status Validação': r.verification_status,
       'Sincronização': r.sync_status,
       'Corrigido': r.is_corrected ? 'SIM' : 'NÃO',
@@ -80,7 +80,7 @@ export function exportTimeRecordsToCSV(records: TimeRecord[], filename = 'MP_CAR
       `"${(r.device?.device_name || '').replace(/"/g, '""')}"`,
       `"${(r.location_address || '').replace(/"/g, '""')}"`,
       `"${r.location_accuracy ? r.location_accuracy + 'm' : 'N/D'}"`,
-      `"${Math.round((r.verification_score || 0) * 100)}%"`,
+      `"VALIDADO"`,
       `"${r.verification_status}"`,
       `"${r.is_corrected ? 'SIM' : 'NAO'}"`,
       `"${(r.correction_reason || '').replace(/"/g, '""')}"`

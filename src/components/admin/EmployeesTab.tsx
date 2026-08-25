@@ -138,7 +138,7 @@ export const EmployeesTab: React.FC = () => {
             <span>GESTÃO DE COLABORADORES</span>
           </h2>
           <p className="text-xs text-zinc-400">
-            Cadastre funcionários e registre a foto de 1º Scan para a biometria facial
+            Cadastre colaboradores e gerencie o reconhecimento facial biométrico
           </p>
         </div>
 

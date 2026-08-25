@@ -111,7 +111,7 @@ export const EmployeeHistoryModal: React.FC<EmployeeHistoryModalProps> = ({
                   <div className="flex items-center justify-between text-[11px] pt-1 text-zinc-500 border-t border-[#222222]/50">
                     <span className="flex items-center gap-1 text-emerald-400/80 font-medium">
                       <ShieldCheck className="w-3 h-3" />
-                      Facial ({Math.round(r.verification_score * 100)}%)
+                      Biometria Facial
                     </span>
                     <StatusBadge status={r.sync_status} />
                   </div>

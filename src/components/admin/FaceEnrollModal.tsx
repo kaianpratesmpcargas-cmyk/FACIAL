@@ -108,9 +108,9 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
       setIsFaceDetected(analysis.isFaceDetected);
 
       if (!analysis.isFaceDetected) {
-        setLiveFeedback(analysis.errorMessage || 'Enquadre o rosto completo (olhos e boca visíveis).');
+        setLiveFeedback(analysis.errorMessage || 'Enquadre o rosto de frente para a câmera.');
       } else {
-        setLiveFeedback('✓ Rosto perfeitamente enquadrado! Clique no botão para gravar.');
+        setLiveFeedback('✓ Rosto identificado! Clique no botão para cadastrar.');
       }
     }, 150);
   };
@@ -132,10 +132,8 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
       setCapturedPreview(analysis.photoPreview);
       await dbService.saveFaceProfile(employee.id, analysis.descriptor, analysis.photoPreview);
 
-      // Notifica o componente pai imediatamente
       onEnrolled();
-
-      setSuccessMessage(`1º Scan gravado com sucesso para ${employee.full_name}! Foto de referência e biometria cadastradas.`);
+      setSuccessMessage(`Biometria cadastrada com sucesso para ${employee.full_name}!`);
       
       setTimeout(() => {
         cleanup();
@@ -161,7 +159,7 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
               <Scan className="w-6 h-6 text-black" />
             </div>
             <div>
-              <h3 className="font-extrabold text-sm sm:text-base text-white">1º SCAN — CADASTRO FACIAL</h3>
+              <h3 className="font-extrabold text-sm sm:text-base text-white">CADASTRO DE BIOMETRIA FACIAL</h3>
               <p className="text-xs text-zinc-400">{employee.full_name} ({employee.employee_code})</p>
             </div>
           </div>
@@ -241,7 +239,7 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
           <div className="p-3 rounded-xl bg-[#1C1C1C] border border-[#2B2B2B] flex items-start gap-2.5 text-[11px] text-zinc-400">
             <Lock className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
             <span>
-              <b className="text-zinc-200">Foto de Referência Oficial:</b> Este 1º scan é a foto base. Quando o colaborador for bater ponto, o sistema exigirá um rosto real e conferirá se bate com esta foto.
+              <b className="text-zinc-200">Foto Oficial do Colaborador:</b> O rosto cadastrado será a base de reconhecimento nas batidas diárias de ponto pelo celular.
             </span>
           </div>
 
@@ -269,7 +267,7 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
               }`}
             >
               <ShieldCheck className={`w-4 h-4 ${isFaceDetected ? 'text-black' : 'text-zinc-500'}`} />
-              <span>{isCapturing ? 'Gravando...' : 'Gravar Foto & Template'}</span>
+              <span>{isCapturing ? 'Cadastrando...' : 'Cadastrar Face'}</span>
             </button>
           </div>
         </div>

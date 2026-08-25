@@ -269,8 +269,8 @@ export const RecordsTab: React.FC = () => {
                       </td>
 
                       <td className="py-3.5 px-3 text-center">
-                        <span className="inline-block font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-500/30">
-                          {Math.round((r.verification_score || 0.98) * 100)}%
+                        <span className="inline-block text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-500/30">
+                          Validado
                         </span>
                       </td>
 

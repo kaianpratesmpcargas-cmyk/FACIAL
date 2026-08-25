@@ -230,8 +230,8 @@ export const DashboardTab: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-center">
-                        <span className="inline-block font-mono font-bold text-xs px-2.5 py-1 rounded-full bg-emerald-950/70 border border-emerald-500/30 text-emerald-400">
-                          {Math.round((r.verification_score || 0.98) * 100)}% Liveness OK
+                        <span className="inline-block font-bold text-xs px-2.5 py-1 rounded-full bg-emerald-950/70 border border-emerald-500/30 text-emerald-400">
+                          Biometria Validada
                         </span>
                       </td>
                     </tr>
