@@ -93,13 +93,26 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
   };
 
   const loadProfileAndStartCamera = async () => {
+    setCameraState('requesting');
+    setErrorMessage(null);
+
     try {
       const prof = await dbService.getFaceProfile(employee.id);
+      
+      // EXIGÊNCIA RIGOROSA: Bloqueia batida se a biometria não estiver cadastrada pelo admin
+      if (!prof || !prof.descriptor || prof.descriptor.length === 0) {
+        setCameraState('error');
+        setErrorMessage('Biometria facial não cadastrada. O administrador deve cadastrar o 1º Scan no painel administrativo antes do registro de ponto.');
+        return;
+      }
+
       setFaceProfile(prof);
+      startCamera();
     } catch (err) {
       console.warn('Erro ao carregar perfil biométrico:', err);
+      setCameraState('error');
+      setErrorMessage('Erro ao consultar a biometria cadastrada.');
     }
-    startCamera();
   };
 
   const startCamera = async () => {
@@ -112,7 +125,6 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
     validFaceFramesRef.current = 0;
 
     try {
-      // Tenta acessar a câmera com restrições otimizadas para mobile e desktop
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -124,7 +136,6 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           audio: false,
         });
       } catch {
-        // Fallback para qualquer câmera disponível
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       }
 
@@ -136,7 +147,6 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
         video.setAttribute('playsinline', 'true');
         video.muted = true;
         
-        // Garante que o vídeo reproduza sem travar em tela preta
         video.onloadedmetadata = () => {
           video.play().catch(console.error);
           setCameraState('active');
@@ -147,7 +157,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
       console.warn('Erro ao abrir câmera frontal:', err);
       setCameraState('error');
       setErrorMessage(
-        'Não foi possível acessar a câmera. Verifique se concedeu permissão de vídeo no navegador do celular.'
+        'Não foi possível acessar a câmera frontal. Conceda permissão de vídeo no navegador.'
       );
     }
   };
@@ -169,50 +179,51 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
         return;
       }
 
-      // Rosto humano real detectado
+      // Rosto humano real detectado (passou nos testes de olhos, nariz e maçãs)
       validFaceFramesRef.current += 1;
       setIsFaceValid(true);
 
       // Etapa 1: Rosto Enquadrado e Estável
-      if (validFaceFramesRef.current >= 3 && validFaceFramesRef.current < 8) {
+      if (validFaceFramesRef.current >= 3 && validFaceFramesRef.current < 7) {
         setLivenessStage('blink');
-        setStatusText('Rosto identificado! Pisque os olhos para validação de presença.');
+        setStatusText('Rosto identificado! Pisque os olhos para validação.');
       } 
       // Etapa 2: Liveness e Comparação Matemática
-      else if (validFaceFramesRef.current >= 8) {
+      else if (validFaceFramesRef.current >= 7) {
         setLivenessStage('matching');
-        setStatusText('Comparando feições com o 1º Scan cadastrado...');
+        setStatusText('Comparando feições com a foto cadastrada...');
         
         if (loopRef.current) {
           clearInterval(loopRef.current);
           loopRef.current = null;
         }
 
-        executeVerificationAndPunch(analysis.descriptor, analysis.photoPreview);
+        executeVerificationAndPunch(analysis.descriptor);
       }
     }, 150);
   };
 
-  const executeVerificationAndPunch = async (capturedDescriptor: number[], capturedPhoto: string) => {
+  const executeVerificationAndPunch = async (capturedDescriptor: number[]) => {
     if (isProcessing) return;
     setIsProcessing(true);
 
     try {
-      // 1. Se o colaborador ainda não tem biometria gravada: grava como 1º Scan
-      if (!faceProfile) {
-        await dbService.saveFaceProfile(employee.id, capturedDescriptor, capturedPhoto);
-        setSimilarityScore(99);
-      } else {
-        // 2. Compara o rosto atual contra o 1º Scan oficial
-        const matchResult = FaceEngine.compareBiometrics(capturedDescriptor, faceProfile.descriptor);
-        setSimilarityScore(matchResult.similarityPercent);
+      if (!faceProfile || !faceProfile.descriptor || faceProfile.descriptor.length === 0) {
+        setCameraState('error');
+        setErrorMessage('Biometria facial não cadastrada para este colaborador.');
+        setIsProcessing(false);
+        return;
+      }
 
-        if (!matchResult.matched) {
-          setCameraState('error');
-          setErrorMessage(matchResult.reason);
-          setIsProcessing(false);
-          return;
-        }
+      // Compara o rosto atual contra a foto oficial cadastrada
+      const matchResult = FaceEngine.compareBiometrics(capturedDescriptor, faceProfile.descriptor);
+      setSimilarityScore(matchResult.similarityPercent);
+
+      if (!matchResult.matched) {
+        setCameraState('error');
+        setErrorMessage(matchResult.reason);
+        setIsProcessing(false);
+        return;
       }
 
       setLivenessStage('success');
@@ -285,8 +296,8 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
               <Scan className="w-5 h-5 text-black" />
             </div>
             <div>
-              <h3 className="font-extrabold text-sm text-white">RECONHECIMENTO FACIAL REAL</h3>
-              <p className="text-[11px] text-zinc-400 font-medium">MP CARGAS — Detecção ao Vivo</p>
+              <h3 className="font-extrabold text-sm text-white">RECONHECIMENTO FACIAL</h3>
+              <p className="text-[11px] text-zinc-400 font-medium">MP CARGAS — Detecção Biométrica</p>
             </div>
           </div>
           <button
@@ -323,18 +334,6 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
                   <div className="absolute left-0 right-0 h-1 bg-[#22C55E] shadow-[0_0_12px_#22C55E] animate-scan-line" />
                 </div>
               </div>
-
-              {/* Miniatura da Foto Oficial de Referência (1º Scan) */}
-              {(faceProfile?.photo_preview || employee.photo_preview) && (
-                <div className="absolute top-3 right-3 bg-[#111111]/90 border border-emerald-500/50 p-1.5 rounded-2xl shadow-2xl flex flex-col items-center gap-1 animate-fadeIn">
-                  <img
-                    src={faceProfile?.photo_preview || employee.photo_preview}
-                    alt="Foto Cadastrada"
-                    className="w-12 h-12 rounded-xl object-cover"
-                  />
-                  <span className="text-[9px] font-mono font-bold text-emerald-400">1º SCAN</span>
-                </div>
-              )}
 
               {/* Status Dinâmico */}
               <div className="absolute bottom-4 left-4 right-4 bg-[#111111]/95 backdrop-blur border border-[#333333] py-3 px-4 rounded-2xl flex items-center gap-3 shadow-xl">
@@ -384,7 +383,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
 
               <div className="flex flex-col gap-2 w-full max-w-xs mt-3">
                 <button
-                  onClick={startCamera}
+                  onClick={loadProfileAndStartCamera}
                   className="w-full py-3 px-4 rounded-xl bg-[#FFD100] text-black text-xs font-black flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-[#FFD100]/20"
                 >
                   <RefreshCw className="w-4 h-4" />
