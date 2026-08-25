@@ -48,6 +48,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const loopRef = useRef<number | null>(null);
+  const isInferringRef = useRef(false);
 
   const [cameraState, setCameraState] = useState<'requesting' | 'active' | 'error'>('requesting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -172,91 +173,96 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
     if (loopRef.current) clearInterval(loopRef.current);
 
     loopRef.current = window.setInterval(async () => {
-      if (!videoRef.current || isProcessing || isFinishedRef.current) return;
+      if (!videoRef.current || isProcessing || isFinishedRef.current || isInferringRef.current) return;
+      isInferringRef.current = true;
 
-      const analysis: FaceAnalysisResult = await FaceEngine.analyzeLiveFrame(videoRef.current, {
-        captureSnapshot: progressRef.current >= 75,
-      });
+      try {
+        const analysis: FaceAnalysisResult = await FaceEngine.analyzeLiveFrame(videoRef.current, {
+          captureSnapshot: progressRef.current >= 75,
+        });
 
-      // 1. Validação de Singularidade e Qualidade (Rejeita mãos, paredes, objetos, múltiplos rostos)
-      if (analysis.status === 'NO_FACE') {
-        setIsFaceValid(false);
-        progressRef.current = Math.max(0, progressRef.current - 20);
-        setProgress(progressRef.current);
-        setStatusText(analysis.errorMessage || 'Posicione seu rosto dentro do círculo.');
-        return;
-      }
-
-      if (analysis.status === 'MULTIPLE_FACES') {
-        setIsFaceValid(false);
-        progressRef.current = 0;
-        setProgress(0);
-        setStatusText('⚠️ Mais de 1 pessoa detectada! Apenas o colaborador deve estar no enquadramento.');
-        return;
-      }
-
-      if (analysis.status === 'FACE_TOO_FAR') {
-        setIsFaceValid(false);
-        progressRef.current = Math.max(0, progressRef.current - 10);
-        setProgress(progressRef.current);
-        setStatusText('Aproxime-se mais da câmera.');
-        return;
-      }
-
-      if (analysis.status === 'FACE_NOT_CENTERED') {
-        setIsFaceValid(false);
-        progressRef.current = Math.max(0, progressRef.current - 10);
-        setProgress(progressRef.current);
-        setStatusText('Centralize seu rosto no círculo.');
-        return;
-      }
-
-      if (analysis.status === 'POOR_LIGHTING') {
-        setIsFaceValid(false);
-        progressRef.current = Math.max(0, progressRef.current - 10);
-        setProgress(progressRef.current);
-        setStatusText('Ambiente com pouca luz. Aproxime-se de uma fonte de luz.');
-        return;
-      }
-
-      // 2. Comparação Biométrica com a Rede Neural ResNet-34 (Embedding 128D)
-      if (faceProfileRef.current?.embedding && analysis.descriptor) {
-        const comparison = FaceEngine.compareBiometricEmbeddings(
-          analysis.descriptor,
-          faceProfileRef.current.embedding
-        );
-
-        if (!comparison.matched) {
+        // 1. Validação de Singularidade e Qualidade (Rejeita mãos, paredes, objetos, múltiplos rostos)
+        if (analysis.status === 'NO_FACE') {
           setIsFaceValid(false);
-          progressRef.current = Math.max(0, progressRef.current - 30);
+          progressRef.current = Math.max(0, progressRef.current - 20);
           setProgress(progressRef.current);
-          setStatusText('⚠️ Rosto não confere com o colaborador cadastrado!');
+          setStatusText(analysis.errorMessage || 'Posicione seu rosto dentro do círculo.');
           return;
         }
-      }
 
-      // 3. Rosto Válido e Reconhecido: Avança progresso automaticamente
-      setIsFaceValid(true);
-      progressRef.current = Math.min(100, progressRef.current + 25);
-      setProgress(progressRef.current);
-
-      if (progressRef.current < 50) {
-        setStatusText('Rosto identificado • Validando biometria...');
-      } else if (progressRef.current < 100) {
-        setStatusText(`Confirmando identidade (${progressRef.current}%)...`);
-      } else if (progressRef.current >= 100) {
-        isFinishedRef.current = true;
-        setStatusText('✓ Identidade Confirmada! Registrando ponto...');
-
-        if (loopRef.current) {
-          clearInterval(loopRef.current);
-          loopRef.current = null;
+        if (analysis.status === 'MULTIPLE_FACES') {
+          setIsFaceValid(false);
+          progressRef.current = 0;
+          setProgress(0);
+          setStatusText('⚠️ Mais de 1 pessoa detectada! Apenas o colaborador deve estar no enquadramento.');
+          return;
         }
 
-        const snapshot = analysis.photoPreview || captureCanvasSnapshot();
-        setTimeout(() => {
-          executeServerVerification(analysis.descriptor || [], snapshot);
-        }, 300);
+        if (analysis.status === 'FACE_TOO_FAR') {
+          setIsFaceValid(false);
+          progressRef.current = Math.max(0, progressRef.current - 10);
+          setProgress(progressRef.current);
+          setStatusText('Aproxime-se mais da câmera.');
+          return;
+        }
+
+        if (analysis.status === 'FACE_NOT_CENTERED') {
+          setIsFaceValid(false);
+          progressRef.current = Math.max(0, progressRef.current - 10);
+          setProgress(progressRef.current);
+          setStatusText('Centralize seu rosto no círculo.');
+          return;
+        }
+
+        if (analysis.status === 'POOR_LIGHTING') {
+          setIsFaceValid(false);
+          progressRef.current = Math.max(0, progressRef.current - 10);
+          setProgress(progressRef.current);
+          setStatusText('Ambiente com pouca luz. Aproxime-se de uma fonte de luz.');
+          return;
+        }
+
+        // 2. Comparação Biométrica com a Rede Neural ResNet-34 (Embedding 128D)
+        if (faceProfileRef.current?.embedding && analysis.descriptor) {
+          const comparison = FaceEngine.compareBiometricEmbeddings(
+            analysis.descriptor,
+            faceProfileRef.current.embedding
+          );
+
+          if (!comparison.matched) {
+            setIsFaceValid(false);
+            progressRef.current = Math.max(0, progressRef.current - 30);
+            setProgress(progressRef.current);
+            setStatusText('⚠️ Rosto não confere com o colaborador cadastrado!');
+            return;
+          }
+        }
+
+        // 3. Rosto Válido e Reconhecido: Avança progresso automaticamente
+        setIsFaceValid(true);
+        progressRef.current = Math.min(100, progressRef.current + 25);
+        setProgress(progressRef.current);
+
+        if (progressRef.current < 50) {
+          setStatusText('Rosto identificado • Validando biometria...');
+        } else if (progressRef.current < 100) {
+          setStatusText(`Confirmando identidade (${progressRef.current}%)...`);
+        } else if (progressRef.current >= 100) {
+          isFinishedRef.current = true;
+          setStatusText('✓ Identidade Confirmada! Registrando ponto...');
+
+          if (loopRef.current) {
+            clearInterval(loopRef.current);
+            loopRef.current = null;
+          }
+
+          const snapshot = analysis.photoPreview || captureCanvasSnapshot();
+          setTimeout(() => {
+            executeServerVerification(analysis.descriptor || [], snapshot);
+          }, 300);
+        }
+      } finally {
+        isInferringRef.current = false;
       }
     }, 120);
   };
@@ -301,8 +307,8 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
         }
 
         if (!isOnline) {
-          // Contingência Offline
-          syncManager.enqueueOfflinePunch({
+          // Contingência Offline no IndexedDB
+          await syncManager.enqueueOfflinePunch({
             idempotency_key: idempotencyKey,
             employee_id: employee.id,
             device_id: device?.id || 'b1111111-1111-4111-8111-111111111111',

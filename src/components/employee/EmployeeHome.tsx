@@ -195,7 +195,7 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
   };
 
   return (
-    <div className="min-h-[calc(100vh-65px)] bg-[#111111] text-white flex flex-col justify-between p-4 sm:p-6 max-w-lg mx-auto w-full animate-fadeIn">
+    <div className="min-h-[calc(100dvh-65px)] bg-[#111111] text-white flex flex-col justify-between p-4 sm:p-6 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] max-w-lg mx-auto w-full animate-fadeIn overflow-x-hidden">
       
       {/* 1. IDENTIFICAÇÃO DO COLABORADOR LOGADO */}
       <div className="space-y-4">

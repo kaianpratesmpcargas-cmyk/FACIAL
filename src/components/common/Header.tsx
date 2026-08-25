@@ -20,7 +20,7 @@ export const Header: React.FC<HeaderProps> = ({
   pendingCount,
 }) => {
   return (
-    <header className="bg-[#111111] border-b border-[#262626] sticky top-0 z-40 px-4 py-3 select-none">
+    <header className="bg-[#111111] border-b border-[#262626] sticky top-0 z-40 px-4 py-3 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] select-none">
       <div className="max-w-6xl mx-auto flex items-center justify-between">
         
         {/* Logo Corporativo MP CARGAS */}
