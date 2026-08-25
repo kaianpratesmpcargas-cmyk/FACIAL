@@ -151,9 +151,10 @@ export const dbService = {
       department: emp.department || 'Operações / Frota',
       role: emp.role || 'Motorista',
       status: emp.status || 'ATIVO',
+      photo_preview: emp.photo_preview,
       created_at: nowIso,
       updated_at: nowIso,
-      has_face_profile: false,
+      has_face_profile: Boolean(emp.photo_preview),
     };
     emps.unshift(newEmp);
     setStored(STORAGE_KEYS.EMPLOYEES, emps);
@@ -429,6 +430,7 @@ export const dbService = {
     longitude: number | null;
     location_accuracy: number | null;
     location_address?: string;
+    photo_preview?: string;
     verification_score?: number;
     idempotency_key?: string;
     sync_status?: 'SINCRONIZADO' | 'OFFLINE_PENDENTE';
@@ -448,7 +450,8 @@ export const dbService = {
           longitude: data.longitude,
           location_accuracy: data.location_accuracy,
           location_address: data.location_address || 'Salvador - BA',
-          verification_method: 'FACIAL_LIVENESS',
+          photo_preview: data.photo_preview || null,
+          verification_method: 'FOTO_COMPROBATORIA',
           verification_status: 'VALIDADO',
           verification_score: data.verification_score ?? 0.98,
           sync_status: data.sync_status || 'SINCRONIZADO',
@@ -494,7 +497,8 @@ export const dbService = {
       longitude: data.longitude,
       location_accuracy: data.location_accuracy,
       location_address: data.location_address || 'Salvador - BA',
-      verification_method: 'FACIAL_LIVENESS',
+      photo_preview: data.photo_preview,
+      verification_method: 'FOTO_COMPROBATORIA',
       verification_status: 'VALIDADO',
       verification_score: data.verification_score ?? 0.98,
       sync_status: data.sync_status || 'SINCRONIZADO',

@@ -66,6 +66,8 @@ export interface TimeRecord {
   is_corrected: boolean;
   correction_reason?: string | null;
   original_record_id?: string | null;
+  photo_preview?: string; // Foto comprobatória capturada no momento da batida
+  google_maps_url?: string; // Link direto do Google Maps para auditoria
   created_at: string;
   
   // Relações expandidas para exibição
@@ -108,6 +110,7 @@ export interface GeoLocationInfo {
   accuracy: number;
   cityState: string;
   fullAddress: string;
+  googleMapsUrl: string;
   timestamp: string;
 }
 

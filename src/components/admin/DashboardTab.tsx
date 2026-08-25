@@ -9,11 +9,13 @@ import {
   MapPin, 
   Smartphone, 
   Clock, 
-  RefreshCw 
+  RefreshCw,
+  ExternalLink 
 } from 'lucide-react';
 import { dbService } from '../../lib/supabase';
 import type { TimeRecord } from '../../types';
 import { StatusBadge } from '../common/Badge';
+import { getGoogleMapsUrl } from '../../lib/location';
 
 export const DashboardTab: React.FC = () => {
   const [stats, setStats] = useState({
@@ -221,13 +223,27 @@ export const DashboardTab: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-zinc-300">
-                        <div className="flex items-center gap-1.5 font-medium">
-                          <MapPin className="w-3.5 h-3.5 text-[#FFD100] shrink-0" />
-                          <span>{r.location_address || 'Salvador - BA'}</span>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 font-medium">
+                            <MapPin className="w-3.5 h-3.5 text-[#FFD100] shrink-0" />
+                            <span className="truncate max-w-[170px]">{r.location_address || 'Salvador - BA'}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-zinc-500">
+                              {r.location_accuracy ? `Precisão: ${r.location_accuracy}m` : 'Precisão: 8m'}
+                            </span>
+                            <a
+                              href={getGoogleMapsUrl(r.latitude, r.longitude)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-[#FFD100] hover:text-[#E6BC00] hover:underline"
+                              title="Abrir no Google Maps"
+                            >
+                              <ExternalLink className="w-2.5 h-2.5" />
+                              <span>Google Maps</span>
+                            </a>
+                          </div>
                         </div>
-                        <span className="text-[10px] text-zinc-500">
-                          Precisão: {r.location_accuracy ? `${r.location_accuracy}m` : '8m'}
-                        </span>
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <span className="inline-block font-bold text-xs px-2.5 py-1 rounded-full bg-emerald-950/70 border border-emerald-500/30 text-emerald-400">

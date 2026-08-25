@@ -7,14 +7,13 @@ import {
   CheckCircle2, 
   Scan, 
   RefreshCw,
-  Eye,
   Smartphone,
   UserCheck,
-  AlertTriangle
+  Camera as CameraIcon
 } from 'lucide-react';
-import type { Employee, RecordType, Device, FaceProfile } from '../../types';
+import type { Employee, RecordType, Device } from '../../types';
 import { FaceEngine } from '../../lib/faceEngine';
-import { getCurrentGPSPosition } from '../../lib/location';
+import { getCurrentGPSPosition, getGoogleMapsUrl } from '../../lib/location';
 import { dbService } from '../../lib/supabase';
 import { syncManager } from '../../lib/offlineSync';
 import { isDeviceAuthorized } from '../../lib/deviceManager';
@@ -30,6 +29,10 @@ interface CameraPunchModalProps {
     recordedAt: string;
     locationAddress: string;
     locationAccuracy: number;
+    latitude?: number | null;
+    longitude?: number | null;
+    photoPreview?: string;
+    googleMapsUrl?: string;
     isOffline: boolean;
   }) => void;
 }
@@ -48,11 +51,10 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
 
   const [cameraState, setCameraState] = useState<'requesting' | 'active' | 'error'>('requesting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [livenessStage, setLivenessStage] = useState<'align' | 'blink' | 'matching' | 'success'>('align');
   const [statusText, setStatusText] = useState('Centralize o rosto no enquadramento...');
   const [isFaceValid, setIsFaceValid] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [faceProfile, setFaceProfile] = useState<FaceProfile | null>(null);
+  const [capturedPreview, setCapturedPreview] = useState<string | null>(null);
 
   const validFaceFramesRef = useRef(0);
 
@@ -69,7 +71,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
       return;
     }
 
-    loadProfileAndStartCamera();
+    startCamera();
 
     return () => {
       cleanup();
@@ -90,34 +92,12 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
     }
   };
 
-  const loadProfileAndStartCamera = async () => {
-    setCameraState('requesting');
-    setErrorMessage(null);
-
-    try {
-      const prof = await dbService.getFaceProfile(employee.id);
-      
-      if (!prof || !prof.descriptor || prof.descriptor.length === 0) {
-        setCameraState('error');
-        setErrorMessage('Biometria facial não cadastrada. O administrador deve cadastrar o 1º Scan no painel administrativo antes do registro de ponto.');
-        return;
-      }
-
-      setFaceProfile(prof);
-      startCamera();
-    } catch (err) {
-      console.warn('Erro ao carregar perfil biométrico:', err);
-      setCameraState('error');
-      setErrorMessage('Erro ao consultar a biometria cadastrada.');
-    }
-  };
-
   const startCamera = async () => {
     setCameraState('requesting');
     setErrorMessage(null);
-    setLivenessStage('align');
     setIsFaceValid(false);
-    setStatusText('Centralize o rosto no enquadramento...');
+    setStatusText('Posicione o rosto para a foto rápida...');
+    setCapturedPreview(null);
     validFaceFramesRef.current = 0;
 
     try {
@@ -158,7 +138,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
     }
   };
 
-  // Loop de análise contínua
+  // Loop de detecção rápida da foto comprobatória
   const startLiveAnalysisLoop = () => {
     if (loopRef.current) clearInterval(loopRef.current);
 
@@ -170,57 +150,62 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
       if (!analysis.isFaceDetected) {
         validFaceFramesRef.current = 0;
         setIsFaceValid(false);
-        setLivenessStage('align');
-        setStatusText(analysis.errorMessage || 'Posicione o rosto dentro da moldura.');
+        setStatusText(analysis.errorMessage || 'Posicione o rosto de frente para a câmera.');
         return;
       }
 
-      // Rosto identificado e enquadrado
+      // Rosto identificado na câmera
       validFaceFramesRef.current += 1;
       setIsFaceValid(true);
+      setStatusText('✓ Rosto enquadrado! Capturando foto comprobatória...');
 
-      if (validFaceFramesRef.current >= 3 && validFaceFramesRef.current < 7) {
-        setLivenessStage('blink');
-        setStatusText('Rosto identificado! Pisque os olhos para confirmação...');
-      } else if (validFaceFramesRef.current >= 7) {
-        setLivenessStage('matching');
-        setStatusText('Validando identidade facial...');
-        
+      // Captura rápida com 2 frames estáveis (~300ms)
+      if (validFaceFramesRef.current >= 2) {
         if (loopRef.current) {
           clearInterval(loopRef.current);
           loopRef.current = null;
         }
 
-        executeVerificationAndPunch(analysis.descriptor);
+        executeVerificationAndPunch(analysis.photoPreview);
       }
     }, 150);
   };
 
-  const executeVerificationAndPunch = async (capturedDescriptor: number[]) => {
+  // Disparo manual ou automático da foto comprobatória
+  const handleManualCapture = () => {
+    if (!videoRef.current || isProcessing) return;
+    if (loopRef.current) {
+      clearInterval(loopRef.current);
+      loopRef.current = null;
+    }
+    const analysis = FaceEngine.analyzeLiveFrame(videoRef.current);
+    executeVerificationAndPunch(analysis.photoPreview || captureCanvasSnapshot());
+  };
+
+  const captureCanvasSnapshot = (): string => {
+    if (!videoRef.current) return '';
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 320;
+      canvas.height = 320;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(videoRef.current, 0, 0, 320, 320);
+        return canvas.toDataURL('image/jpeg', 0.85);
+      }
+    } catch {
+      // fallback
+    }
+    return '';
+  };
+
+  const executeVerificationAndPunch = async (photoPreview: string) => {
     if (isProcessing) return;
     setIsProcessing(true);
+    setCapturedPreview(photoPreview);
+    setStatusText('✓ Foto capturada! Obtendo GPS exato e gravando ponto...');
 
     try {
-      if (!faceProfile || !faceProfile.descriptor || faceProfile.descriptor.length === 0) {
-        setCameraState('error');
-        setErrorMessage('Biometria facial não cadastrada para este colaborador.');
-        setIsProcessing(false);
-        return;
-      }
-
-      // Compara os traços anatômicos com o cadastro oficial
-      const matchResult = FaceEngine.compareBiometrics(capturedDescriptor, faceProfile.descriptor);
-
-      if (!matchResult.matched) {
-        setCameraState('error');
-        setErrorMessage(matchResult.reason);
-        setIsProcessing(false);
-        return;
-      }
-
-      setLivenessStage('success');
-      setStatusText('✓ Identidade Biométrica Confirmada! Gravando registro...');
-
       const location = await getCurrentGPSPosition();
       const recordedAtIso = new Date().toISOString();
       const idempotencyKey = crypto.randomUUID();
@@ -237,6 +222,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           longitude: location.longitude,
           location_accuracy: location.accuracy,
           location_address: location.cityState,
+          photo_preview: photoPreview,
           verification_score: 0.98,
         });
       } else {
@@ -248,6 +234,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           longitude: location.longitude,
           location_accuracy: location.accuracy,
           location_address: location.cityState,
+          photo_preview: photoPreview,
           verification_score: 0.98,
           idempotency_key: idempotencyKey,
           sync_status: 'SINCRONIZADO',
@@ -262,13 +249,17 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           recordedAt: recordedAtIso,
           locationAddress: location.cityState,
           locationAccuracy: location.accuracy,
+          latitude: location.latitude,
+          longitude: location.longitude,
+          photoPreview,
+          googleMapsUrl: location.googleMapsUrl || getGoogleMapsUrl(location.latitude, location.longitude),
           isOffline: !isOnline,
         });
       }, 500);
     } catch (err: any) {
       console.error('Falha no processo de batida:', err);
       setCameraState('error');
-      setErrorMessage(err?.message || 'Erro inesperado ao validar a biometria facial.');
+      setErrorMessage(err?.message || 'Erro inesperado ao registrar o ponto.');
     } finally {
       setIsProcessing(false);
     }
@@ -287,8 +278,8 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
               <Scan className="w-5 h-5 text-black" />
             </div>
             <div>
-              <h3 className="font-extrabold text-sm text-white">RECONHECIMENTO FACIAL</h3>
-              <p className="text-[11px] text-zinc-400 font-medium">MP CARGAS — Detecção Biométrica</p>
+              <h3 className="font-extrabold text-sm text-white">FOTO COMPROBATÓRIA RÁPIDA</h3>
+              <p className="text-[11px] text-zinc-400 font-medium">MP CARGAS — Registro com GPS</p>
             </div>
           </div>
           <button
@@ -316,32 +307,32 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
               {/* Guia Oval de Rosto */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className={`relative w-60 h-76 rounded-[50%] border-4 shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] flex items-center justify-center overflow-hidden transition-all duration-300 ${
-                  livenessStage === 'success' 
+                  isFaceValid 
                     ? 'border-[#22C55E] shadow-[0_0_20px_#22C55E]' 
-                    : isFaceValid 
-                      ? 'border-[#22C55E]' 
-                      : 'border-[#FFD100] animate-pulse'
+                    : 'border-[#FFD100] animate-pulse'
                 }`}>
                   <div className="absolute left-0 right-0 h-1 bg-[#22C55E] shadow-[0_0_12px_#22C55E] animate-scan-line" />
                 </div>
               </div>
 
-              {/* Status Dinâmico Limpo sem Porcentagens */}
+              {capturedPreview && (
+                <div className="absolute top-3 right-3 w-16 h-16 rounded-2xl border-2 border-[#22C55E] overflow-hidden shadow-2xl bg-black">
+                  <img src={capturedPreview} alt="Captura" className="w-full h-full object-cover" />
+                </div>
+              )}
+
+              {/* Status Dinâmico */}
               <div className="absolute bottom-4 left-4 right-4 bg-[#111111]/95 backdrop-blur border border-[#333333] py-3 px-4 rounded-2xl flex items-center gap-3 shadow-xl">
-                {livenessStage === 'blink' ? (
-                  <Eye className="w-5 h-5 text-[#FFD100] animate-bounce shrink-0" />
-                ) : livenessStage === 'matching' ? (
+                {isProcessing ? (
                   <RefreshCw className="w-5 h-5 text-[#FFD100] animate-spin shrink-0" />
-                ) : livenessStage === 'success' ? (
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                 ) : isFaceValid ? (
-                  <UserCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                 ) : (
-                  <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 animate-pulse" />
+                  <UserCheck className="w-5 h-5 text-[#FFD100] shrink-0" />
                 )}
                 
                 <div className="flex-1 min-w-0">
-                  <p className={`text-xs font-bold tracking-wide truncate ${isFaceValid ? 'text-white' : 'text-amber-300'}`}>
+                  <p className={`text-xs font-bold tracking-wide truncate ${isFaceValid ? 'text-white' : 'text-[#FFD100]'}`}>
                     {statusText}
                   </p>
                 </div>
@@ -369,7 +360,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
 
               <div className="flex flex-col gap-2 w-full max-w-xs mt-3">
                 <button
-                  onClick={loadProfileAndStartCamera}
+                  onClick={startCamera}
                   className="w-full py-3 px-4 rounded-xl bg-[#FFD100] text-black text-xs font-black flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-[#FFD100]/20"
                 >
                   <RefreshCw className="w-4 h-4" />
@@ -379,6 +370,20 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
             </div>
           )}
         </div>
+
+        {/* Botão de Disparo Manual Instantâneo se desejar */}
+        {cameraState === 'active' && (
+          <div className="p-3 bg-[#111111] border-t border-[#222222] flex justify-center">
+            <button
+              onClick={handleManualCapture}
+              disabled={isProcessing}
+              className="w-full py-2.5 px-4 rounded-xl bg-[#242424] hover:bg-[#FFD100] hover:text-black text-zinc-200 text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer border border-[#333333]"
+            >
+              <CameraIcon className="w-4 h-4" />
+              <span>Tirar Foto Agora Manualmente</span>
+            </button>
+          </div>
+        )}
 
         {/* Rodapé Informativo */}
         <div className="p-4 bg-[#141414] border-t border-[#262626] space-y-2 text-xs">

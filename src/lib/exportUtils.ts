@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import type { TimeRecord } from '../types';
+import { getGoogleMapsUrl } from './location';
 
 /**
  * Utilitário de Exportação de Relatórios Corporativos (CSV & Excel)
@@ -8,6 +9,7 @@ import type { TimeRecord } from '../types';
 export function exportTimeRecordsToExcel(records: TimeRecord[], filename = 'MP_CARGAS_Relatorio_Ponto.xlsx') {
   const formattedData = records.map((r, index) => {
     const recDate = new Date(r.recorded_at);
+    const mapsUrl = r.latitude && r.longitude ? getGoogleMapsUrl(r.latitude, r.longitude) : 'N/D';
     return {
       '#': index + 1,
       'Data': recDate.toLocaleDateString('pt-BR'),
@@ -21,6 +23,7 @@ export function exportTimeRecordsToExcel(records: TimeRecord[], filename = 'MP_C
       'Dispositivo': r.device?.device_name || 'Dispositivo Padrão',
       'Identificador Dispositivo': r.device?.device_identifier || '-',
       'Localização / Cidade': r.location_address || `${r.latitude}, ${r.longitude}`,
+      'Link Google Maps': mapsUrl,
       'Precisão GPS (m)': r.location_accuracy ? `${r.location_accuracy}m` : 'N/D',
       'Método de Validação': r.verification_method,
       'Validação Biométrica': 'VALIDADO',
@@ -39,7 +42,7 @@ export function exportTimeRecordsToExcel(records: TimeRecord[], filename = 'MP_C
   const colWidths = [
     { wch: 5 }, { wch: 12 }, { wch: 10 }, { wch: 26 }, { wch: 12 },
     { wch: 16 }, { wch: 22 }, { wch: 22 }, { wch: 20 }, { wch: 28 },
-    { wch: 20 }, { wch: 30 }, { wch: 15 }, { wch: 20 }, { wch: 15 },
+    { wch: 20 }, { wch: 30 }, { wch: 45 }, { wch: 15 }, { wch: 20 }, { wch: 15 },
     { wch: 16 }, { wch: 16 }, { wch: 10 }, { wch: 30 }, { wch: 32 }
   ];
   worksheet['!cols'] = colWidths;
@@ -59,6 +62,7 @@ export function exportTimeRecordsToCSV(records: TimeRecord[], filename = 'MP_CAR
     'Tipo',
     'Dispositivo',
     'Localizacao',
+    'Link_Google_Maps',
     'Precisao_GPS',
     'Score_Facial',
     'Status',
@@ -68,6 +72,7 @@ export function exportTimeRecordsToCSV(records: TimeRecord[], filename = 'MP_CAR
 
   const rows = records.map((r) => {
     const recDate = new Date(r.recorded_at);
+    const mapsUrl = r.latitude && r.longitude ? getGoogleMapsUrl(r.latitude, r.longitude) : 'N/D';
     return [
       `"${recDate.toLocaleDateString('pt-BR')}"`,
       `"${recDate.toLocaleTimeString('pt-BR')}"`,
@@ -79,6 +84,7 @@ export function exportTimeRecordsToCSV(records: TimeRecord[], filename = 'MP_CAR
       `"${formatRecordType(r.record_type)}"`,
       `"${(r.device?.device_name || '').replace(/"/g, '""')}"`,
       `"${(r.location_address || '').replace(/"/g, '""')}"`,
+      `"${mapsUrl}"`,
       `"${r.location_accuracy ? r.location_accuracy + 'm' : 'N/D'}"`,
       `"VALIDADO"`,
       `"${r.verification_status}"`,

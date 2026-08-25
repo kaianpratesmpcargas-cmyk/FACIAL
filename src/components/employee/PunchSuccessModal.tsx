@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, MapPin, Clock, Calendar, User, ArrowRight, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, MapPin, Clock, Calendar, User, ArrowRight, ShieldCheck, ExternalLink } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { RecordType } from '../../types';
+import { getGoogleMapsUrl } from '../../lib/location';
 
 interface PunchSuccessModalProps {
   isOpen: boolean;
@@ -11,6 +12,10 @@ interface PunchSuccessModalProps {
   recordedAt: string;
   locationAddress?: string;
   locationAccuracy?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  photoPreview?: string;
+  googleMapsUrl?: string;
   isOffline?: boolean;
 }
 
@@ -22,9 +27,13 @@ export const PunchSuccessModal: React.FC<PunchSuccessModalProps> = ({
   recordedAt,
   locationAddress,
   locationAccuracy,
+  latitude,
+  longitude,
+  photoPreview,
+  googleMapsUrl,
   isOffline = false,
 }) => {
-  const [secondsRemaining, setSecondsRemaining] = useState(3);
+  const [secondsRemaining, setSecondsRemaining] = useState(4);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -40,7 +49,7 @@ export const PunchSuccessModal: React.FC<PunchSuccessModalProps> = ({
       // ignore
     }
 
-    setSecondsRemaining(3);
+    setSecondsRemaining(4);
     const interval = setInterval(() => {
       setSecondsRemaining((prev) => {
         if (prev <= 1) {
@@ -65,6 +74,8 @@ export const PunchSuccessModal: React.FC<PunchSuccessModalProps> = ({
   });
   const dateFormatted = dateObj.toLocaleDateString('pt-BR');
 
+  const mapsUrl = googleMapsUrl || getGoogleMapsUrl(latitude, longitude);
+
   const getRecordLabel = (type: RecordType) => {
     switch (type) {
       case 'ENTRADA': return 'Entrada';
@@ -83,17 +94,26 @@ export const PunchSuccessModal: React.FC<PunchSuccessModalProps> = ({
         <div className="absolute top-0 left-0 right-0 h-1.5 bg-[#262626]">
           <div 
             className="h-full bg-[#22C55E] transition-all duration-1000 ease-linear"
-            style={{ width: `${(secondsRemaining / 3) * 100}%` }}
+            style={{ width: `${(secondsRemaining / 4) * 100}%` }}
           />
         </div>
 
-        {/* Ícone de Sucesso Corporativo */}
-        <div className="mx-auto w-20 h-20 rounded-full bg-[#22C55E]/15 border-2 border-[#22C55E] flex items-center justify-center mb-5 animate-bounce">
-          <CheckCircle2 className="w-12 h-12 text-[#22C55E]" strokeWidth={2.5} />
-        </div>
+        {/* Ícone ou Foto Comprobatória */}
+        {photoPreview ? (
+          <div className="relative mx-auto w-20 h-20 rounded-2xl border-2 border-[#22C55E] overflow-hidden mb-4 shadow-xl">
+            <img src={photoPreview} alt="Comprovante" className="w-full h-full object-cover" />
+            <div className="absolute bottom-0 inset-x-0 bg-black/70 text-[9px] text-emerald-400 font-bold py-0.5">
+              FOTO OK
+            </div>
+          </div>
+        ) : (
+          <div className="mx-auto w-20 h-20 rounded-full bg-[#22C55E]/15 border-2 border-[#22C55E] flex items-center justify-center mb-5 animate-bounce">
+            <CheckCircle2 className="w-12 h-12 text-[#22C55E]" strokeWidth={2.5} />
+          </div>
+        )}
 
         <span className="inline-block px-3 py-1 rounded-full text-xs font-black tracking-wider uppercase bg-[#22C55E]/20 text-[#22C55E] border border-[#22C55E]/40 mb-2">
-          {isOffline ? 'Salvo Localmente (Offline)' : 'Identidade Biométrica Confirmada'}
+          {isOffline ? 'Salvo Localmente (Offline)' : 'Foto Comprobatória Registrada'}
         </span>
 
         <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white mb-6">
@@ -128,18 +148,30 @@ export const PunchSuccessModal: React.FC<PunchSuccessModalProps> = ({
             </div>
           </div>
 
-          {/* Data e Local */}
-          <div className="space-y-2">
+          {/* Data e Local com Google Maps */}
+          <div className="space-y-2.5">
             <div className="flex items-center gap-2 text-xs text-zinc-300">
               <Calendar className="w-4 h-4 text-zinc-400" />
               <span>{dateFormatted}</span>
             </div>
-            <div className="flex items-start gap-2 text-xs text-zinc-300">
-              <MapPin className="w-4 h-4 text-[#FFD100] shrink-0 mt-0.5" />
-              <span className="font-medium">
-                {locationAddress || 'Salvador - BA'}
-                {locationAccuracy ? ` • Precisão: ${locationAccuracy} metros` : ''}
-              </span>
+            <div className="flex items-start justify-between gap-2 text-xs text-zinc-300">
+              <div className="flex items-start gap-2">
+                <MapPin className="w-4 h-4 text-[#FFD100] shrink-0 mt-0.5" />
+                <span className="font-medium">
+                  {locationAddress || 'Salvador - BA'}
+                  {locationAccuracy ? ` • Precisão: ${locationAccuracy}m` : ''}
+                </span>
+              </div>
+              <a
+                href={mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#242424] hover:bg-[#FFD100] hover:text-black text-zinc-200 text-[11px] font-bold border border-[#3A3A3A] shrink-0 transition-colors"
+                title="Abrir localização exata no Google Maps"
+              >
+                <ExternalLink className="w-3 h-3" />
+                <span>Google Maps</span>
+              </a>
             </div>
           </div>
         </div>
@@ -147,7 +179,7 @@ export const PunchSuccessModal: React.FC<PunchSuccessModalProps> = ({
         {/* Botão de Fechar / Retornar Imediatamente */}
         <button
           onClick={onClose}
-          className="w-full py-4 px-6 rounded-2xl bg-[#FFD100] hover:bg-[#E6BC00] text-black font-extrabold text-base flex items-center justify-center gap-2 shadow-lg shadow-[#FFD100]/20 active:scale-[0.98] transition-all"
+          className="w-full py-4 px-6 rounded-2xl bg-[#FFD100] hover:bg-[#E6BC00] text-black font-extrabold text-base flex items-center justify-center gap-2 shadow-lg shadow-[#FFD100]/20 active:scale-[0.98] transition-all cursor-pointer"
         >
           <span>Retornar à Tela Inicial ({secondsRemaining}s)</span>
           <ArrowRight className="w-5 h-5" />

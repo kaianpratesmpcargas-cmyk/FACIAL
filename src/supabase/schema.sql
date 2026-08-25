@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS public.employees (
     department VARCHAR(80) NOT NULL,
     role VARCHAR(80) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'ATIVO' CHECK (status IN ('ATIVO', 'INATIVO')),
+    photo_preview TEXT, -- Foto de referência cadastrada no sistema
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -58,7 +59,8 @@ CREATE TABLE IF NOT EXISTS public.time_records (
     longitude NUMERIC(10, 7),
     location_accuracy NUMERIC(8, 2), -- em metros
     location_address VARCHAR(255),
-    verification_method VARCHAR(50) DEFAULT 'FACIAL_LIVENESS',
+    photo_preview TEXT, -- Foto comprobatória da batida de ponto
+    verification_method VARCHAR(50) DEFAULT 'FOTO_COMPROBATORIA',
     verification_status VARCHAR(20) NOT NULL DEFAULT 'VALIDADO' CHECK (verification_status IN ('VALIDADO', 'FALHA', 'PENDENTE')),
     verification_score NUMERIC(5, 2) DEFAULT 0.98,
     sync_status VARCHAR(30) NOT NULL DEFAULT 'SINCRONIZADO' CHECK (sync_status IN ('SINCRONIZADO', 'OFFLINE_PENDENTE')),
@@ -154,3 +156,10 @@ CREATE POLICY "Acesso total a dispositivos" ON public.devices FOR ALL USING (tru
 CREATE POLICY "Acesso total a registros de ponto" ON public.time_records FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Acesso total a jornadas" ON public.work_sessions FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Acesso total a auditoria" ON public.audit_logs FOR ALL USING (true) WITH CHECK (true);
+
+-- ==============================================================================
+-- SCRIPT DE ATUALIZAÇÃO / MIGRAÇÃO (CASO AS TABELAS JÁ EXISTAM)
+-- ==============================================================================
+ALTER TABLE public.employees ADD COLUMN IF NOT EXISTS photo_preview TEXT;
+ALTER TABLE public.time_records ADD COLUMN IF NOT EXISTS photo_preview TEXT;
+

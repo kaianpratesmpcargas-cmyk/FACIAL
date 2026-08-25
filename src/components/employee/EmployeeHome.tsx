@@ -39,6 +39,10 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
     recordedAt: string;
     locationAddress: string;
     locationAccuracy: number;
+    latitude?: number | null;
+    longitude?: number | null;
+    photoPreview?: string;
+    googleMapsUrl?: string;
     isOffline: boolean;
   } | null>(null);
 
@@ -171,6 +175,10 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
     recordedAt: string;
     locationAddress: string;
     locationAccuracy: number;
+    latitude?: number | null;
+    longitude?: number | null;
+    photoPreview?: string;
+    googleMapsUrl?: string;
     isOffline: boolean;
   }) => {
     setIsCameraOpen(false);
@@ -364,6 +372,10 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
           recordedAt={lastPunchDetails.recordedAt}
           locationAddress={lastPunchDetails.locationAddress}
           locationAccuracy={lastPunchDetails.locationAccuracy}
+          latitude={lastPunchDetails.latitude}
+          longitude={lastPunchDetails.longitude}
+          photoPreview={lastPunchDetails.photoPreview}
+          googleMapsUrl={lastPunchDetails.googleMapsUrl}
           isOffline={lastPunchDetails.isOffline}
         />
       )}

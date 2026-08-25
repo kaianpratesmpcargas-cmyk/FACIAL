@@ -7,18 +7,23 @@ import {
   Smartphone, 
   Edit, 
   FileSpreadsheet,
-  RefreshCw 
+  RefreshCw,
+  ExternalLink,
+  Camera,
+  X
 } from 'lucide-react';
 import type { TimeRecord, Employee } from '../../types';
 import { dbService } from '../../lib/supabase';
 import { StatusBadge } from '../common/Badge';
 import { exportTimeRecordsToExcel, exportTimeRecordsToCSV } from '../../lib/exportUtils';
 import { CorrectionModal } from './CorrectionModal';
+import { getGoogleMapsUrl } from '../../lib/location';
 
 export const RecordsTab: React.FC = () => {
   const [records, setRecords] = useState<TimeRecord[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [previewPhoto, setPreviewPhoto] = useState<{ url: string; name: string; date: string; address?: string; mapsUrl?: string } | null>(null);
 
   // Filtros
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('TODOS');
@@ -201,10 +206,10 @@ export const RecordsTab: React.FC = () => {
               <tr>
                 <th className="py-4 px-4">Data & Horário</th>
                 <th className="py-4 px-4">Funcionário</th>
+                <th className="py-4 px-3 text-center">Foto Comprovante</th>
                 <th className="py-4 px-3">Tipo</th>
-                <th className="py-4 px-4">Localização / GPS</th>
+                <th className="py-4 px-4">Localização & Google Maps</th>
                 <th className="py-4 px-4">Dispositivo</th>
-                <th className="py-4 px-3 text-center">Score</th>
                 <th className="py-4 px-4 text-right">Ação</th>
               </tr>
             </thead>
@@ -224,6 +229,7 @@ export const RecordsTab: React.FC = () => {
                     minute: '2-digit',
                     second: '2-digit',
                   });
+                  const mapsUrl = getGoogleMapsUrl(r.latitude, r.longitude);
 
                   return (
                     <tr key={r.id} className="hover:bg-[#202020] transition-colors">
@@ -244,33 +250,70 @@ export const RecordsTab: React.FC = () => {
                         </div>
                       </td>
 
+                      {/* Foto Comprobatória da Batida */}
+                      <td className="py-3.5 px-3 text-center">
+                        {r.photo_preview ? (
+                          <button
+                            onClick={() => setPreviewPhoto({
+                              url: r.photo_preview!,
+                              name: r.employee?.full_name || 'Colaborador',
+                              date: `${dateStr} às ${timeStr}`,
+                              address: r.location_address,
+                              mapsUrl,
+                            })}
+                            className="relative group inline-block cursor-pointer"
+                            title="Clique para ampliar foto comprobatória"
+                          >
+                            <img
+                              src={r.photo_preview}
+                              alt="Foto Ponto"
+                              className="w-10 h-10 rounded-xl object-cover border border-emerald-500/50 shadow group-hover:scale-105 transition-transform"
+                            />
+                            <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-[#181818]" />
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-zinc-500 font-mono">
+                            <Camera className="w-3 h-3 text-zinc-600" />
+                            <span>Sem foto</span>
+                          </span>
+                        )}
+                      </td>
+
                       <td className="py-3.5 px-3">
                         <StatusBadge status={r.record_type} />
                       </td>
 
                       <td className="py-3.5 px-4 text-zinc-300">
-                        <div className="flex items-center gap-1.5 font-medium">
-                          <MapPin className="w-3.5 h-3.5 text-[#FFD100] shrink-0" />
-                          <span className="truncate max-w-[180px]">{r.location_address || 'Salvador - BA'}</span>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 font-medium">
+                            <MapPin className="w-3.5 h-3.5 text-[#FFD100] shrink-0" />
+                            <span className="truncate max-w-[170px]">{r.location_address || 'Salvador - BA'}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-zinc-500">
+                              {r.location_accuracy ? `Precisão: ${r.location_accuracy}m` : 'Precisão: 8m'}
+                            </span>
+                            <a
+                              href={mapsUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-[#FFD100] hover:text-[#E6BC00] hover:underline"
+                              title="Abrir no Google Maps"
+                            >
+                              <ExternalLink className="w-2.5 h-2.5" />
+                              <span>Google Maps</span>
+                            </a>
+                          </div>
                         </div>
-                        <span className="text-[10px] text-zinc-500">
-                          Precisão: {r.location_accuracy ? `${r.location_accuracy}m` : '8m'}
-                        </span>
                       </td>
 
                       <td className="py-3.5 px-4 text-zinc-300">
                         <div className="flex items-center gap-1 text-xs">
                           <Smartphone className="w-3.5 h-3.5 text-zinc-400" />
-                          <span className="truncate max-w-[150px]">{r.device?.device_name || 'Celular'}</span>
+                          <span className="truncate max-w-[140px]">{r.device?.device_name || 'Celular'}</span>
                         </div>
                         <span className="text-[10px] font-mono text-zinc-500">
                           {r.device?.device_identifier || 'MP-DEV'}
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-3 text-center">
-                        <span className="inline-block text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-500/30">
-                          Validado
                         </span>
                       </td>
 
@@ -292,6 +335,52 @@ export const RecordsTab: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* MODAL DE AMPLIAÇÃO DA FOTO COMPROBATÓRIA */}
+      {previewPhoto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full max-w-sm bg-[#181818] border border-[#333333] rounded-3xl overflow-hidden shadow-2xl flex flex-col">
+            <div className="p-4 bg-[#111111] border-b border-[#262626] flex items-center justify-between">
+              <div>
+                <h4 className="font-extrabold text-sm text-white">{previewPhoto.name}</h4>
+                <p className="text-[11px] text-zinc-400 font-mono">{previewPhoto.date}</p>
+              </div>
+              <button
+                onClick={() => setPreviewPhoto(null)}
+                className="w-8 h-8 rounded-full bg-[#242424] hover:bg-[#333333] text-zinc-300 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 bg-black flex items-center justify-center">
+              <img
+                src={previewPhoto.url}
+                alt="Foto Ampliada"
+                className="w-full max-h-80 object-contain rounded-2xl border border-zinc-800"
+              />
+            </div>
+            <div className="p-4 bg-[#141414] border-t border-[#262626] space-y-3">
+              {previewPhoto.address && (
+                <div className="flex items-center gap-2 text-xs text-zinc-300">
+                  <MapPin className="w-3.5 h-3.5 text-[#FFD100] shrink-0" />
+                  <span className="truncate">{previewPhoto.address}</span>
+                </div>
+              )}
+              {previewPhoto.mapsUrl && (
+                <a
+                  href={previewPhoto.mapsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-2.5 px-3 rounded-xl bg-[#242424] hover:bg-[#FFD100] hover:text-black text-zinc-200 text-xs font-bold flex items-center justify-center gap-2 border border-[#333333] transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Ver Local Exato no Google Maps</span>
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL DE CORREÇÃO DE PONTO */}
       {correctingRecord && (

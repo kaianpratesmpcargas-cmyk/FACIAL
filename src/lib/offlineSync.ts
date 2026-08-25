@@ -11,6 +11,7 @@ export interface PendingPunch {
   longitude: number | null;
   location_accuracy: number | null;
   location_address?: string;
+  photo_preview?: string;
   verification_score: number;
   attempts: number;
   created_at: string;
@@ -132,6 +133,7 @@ class SyncManager {
           longitude: punch.longitude,
           location_accuracy: punch.location_accuracy,
           location_address: punch.location_address,
+          photo_preview: punch.photo_preview,
           verification_score: punch.verification_score,
           idempotency_key: punch.idempotency_key,
           sync_status: 'SINCRONIZADO',
