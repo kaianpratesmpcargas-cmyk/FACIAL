@@ -108,6 +108,13 @@ CREATE TABLE IF NOT EXISTS public.time_records (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Garante a adição de colunas caso a tabela já existisse no banco
+ALTER TABLE public.time_records ADD COLUMN IF NOT EXISTS verification_id UUID;
+ALTER TABLE public.time_records ADD COLUMN IF NOT EXISTS photo_preview TEXT;
+ALTER TABLE public.time_records ADD COLUMN IF NOT EXISTS verification_score NUMERIC(5, 2) DEFAULT 0.99;
+ALTER TABLE public.time_records ADD COLUMN IF NOT EXISTS verification_method VARCHAR(50) DEFAULT 'BIOMETRIA_FACIAL_RESNET34';
+ALTER TABLE public.employees ADD COLUMN IF NOT EXISTS photo_preview TEXT;
+
 -- 7. TABELA DE JORNADAS DE TRABALHO (work_sessions)
 CREATE TABLE IF NOT EXISTS public.work_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
