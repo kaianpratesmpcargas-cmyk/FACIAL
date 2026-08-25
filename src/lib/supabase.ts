@@ -61,8 +61,18 @@ export const dbService = {
 
   async getEmployees(): Promise<Employee[]> {
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase.from('employees').select('*').order('full_name');
-      if (!error && data) return data;
+      const { data: emps, error: empErr } = await supabase.from('employees').select('*').order('full_name');
+      const { data: faces } = await supabase.from('face_profiles').select('*').eq('status', 'ATIVO');
+      if (!empErr && emps) {
+        return emps.map(e => {
+          const profile = faces?.find(f => f.employee_id === e.id);
+          return {
+            ...e,
+            has_face_profile: Boolean(profile),
+            photo_preview: profile?.photo_preview,
+          };
+        });
+      }
     }
     const emps = getStored<Employee>(STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES);
     const faces = getStored<FaceProfile>(STORAGE_KEYS.FACE_PROFILES, INITIAL_FACE_PROFILES);
@@ -140,7 +150,6 @@ export const dbService = {
 
   async deleteEmployee(id: string): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
-      // Deleta perfis biométricos e registros associados
       await supabase.from('face_profiles').delete().eq('employee_id', id);
       await supabase.from('time_records').delete().eq('employee_id', id);
       await supabase.from('work_sessions').delete().eq('employee_id', id);
@@ -150,7 +159,6 @@ export const dbService = {
       }
     }
 
-    // Limpa do LocalStorage
     const emps = getStored<Employee>(STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES);
     setStored(STORAGE_KEYS.EMPLOYEES, emps.filter((e) => e.id !== id));
 
@@ -196,16 +204,27 @@ export const dbService = {
   async saveFaceProfile(employeeId: string, descriptor: number[], photoPreview?: string): Promise<FaceProfile> {
     const nowIso = new Date().toISOString();
     if (isSupabaseConfigured && supabase) {
-      const { data } = await supabase.from('face_profiles').upsert({
-        employee_id: employeeId,
-        provider_reference: 'mp_biometrics_v1',
-        template_version: 'v1.0',
-        descriptor,
-        photo_preview: photoPreview || null,
-        status: 'ATIVO',
-        updated_at: nowIso,
-      }, { onConflict: 'employee_id' }).select().single();
-      if (data) return data;
+      // Verifica se já existe um perfil gravado para atualizar ou inserir
+      const { data: existing } = await supabase.from('face_profiles').select('*').eq('employee_id', employeeId).single();
+      if (existing) {
+        const { data } = await supabase.from('face_profiles').update({
+          descriptor,
+          photo_preview: photoPreview || existing.photo_preview || null,
+          status: 'ATIVO',
+          updated_at: nowIso,
+        }).eq('id', existing.id).select().single();
+        if (data) return data;
+      } else {
+        const { data } = await supabase.from('face_profiles').insert({
+          employee_id: employeeId,
+          provider_reference: 'mp_biometrics_v1',
+          template_version: 'v1.0',
+          descriptor,
+          photo_preview: photoPreview || null,
+          status: 'ATIVO',
+        }).select().single();
+        if (data) return data;
+      }
     }
 
     const profiles = getStored<FaceProfile>(STORAGE_KEYS.FACE_PROFILES, INITIAL_FACE_PROFILES);

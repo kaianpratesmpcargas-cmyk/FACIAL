@@ -89,7 +89,7 @@ export const EmployeesTab: React.FC = () => {
       setIsFormModalOpen(false);
       await loadEmployees();
 
-      // Se for novo cadastro sem biometria, pergunta se deseja abrir a câmera para cadastrar a face imediatamente
+      // Se for novo cadastro sem biometria, abre a câmera para cadastrar a face imediatamente
       if (!editingEmployee) {
         setEnrollingEmployee(saved);
       }
@@ -106,7 +106,7 @@ export const EmployeesTab: React.FC = () => {
   };
 
   const handleDeleteEmployee = async (emp: Employee) => {
-    if (confirm(`Atenção: Deseja realmente excluir o colaborador ${emp.full_name} (${emp.employee_code})? Esta ação não pode ser desfeita.`)) {
+    if (confirm(`Atenção: Deseja realmente excluir o colaborador ${emp.full_name} (${emp.employee_code})? Todos os registros e biometrias associados serão removidos.`)) {
       await dbService.deleteEmployee(emp.id);
       loadEmployees();
     }
@@ -118,8 +118,8 @@ export const EmployeesTab: React.FC = () => {
   const filteredEmployees = employees.filter((e) => {
     const matchesSearch =
       e.full_name.toLowerCase().includes(search.toLowerCase()) ||
-      e.employee_code.toLowerCase().includes(search.toLowerCase()) ||
-      e.cpf.includes(search);
+      e.cpf.includes(search) ||
+      e.employee_code.toLowerCase().includes(search.toLowerCase());
 
     const matchesDept = selectedDept === 'TODOS' || e.department === selectedDept;
     const matchesStatus = selectedStatus === 'TODOS' || e.status === selectedStatus;
@@ -130,44 +130,38 @@ export const EmployeesTab: React.FC = () => {
   return (
     <div className="space-y-6">
       
-      {/* HEADER DA TAB */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#181818] border border-[#2B2B2B] p-5 rounded-3xl shadow-lg">
+      {/* CABEÇALHO DA ABA & BOTÃO DE CADASTRO */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-[#FFD100]" />
-            <p className="text-xs font-black uppercase tracking-widest text-[#FFD100]">
-              Gestão de Recursos Humanos & Operações
-            </p>
-          </div>
-          <h1 className="text-2xl font-black text-white tracking-tight mt-1">
-            FUNCIONÁRIOS DA FROTA & BASE
-          </h1>
-          <p className="text-xs text-zinc-400 font-medium">
-            Cadastro de colaboradores, controle biométrico facial e permissões de acesso
+          <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
+            <Users className="w-6 h-6 text-[#FFD100]" />
+            <span>GESTÃO DE COLABORADORES</span>
+          </h2>
+          <p className="text-xs text-zinc-400">
+            Cadastre funcionários e registre a foto de 1º Scan para a biometria facial
           </p>
         </div>
 
         <button
           onClick={handleOpenCreate}
-          className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#FFD100] hover:bg-[#E6BC00] text-black font-black text-xs transition-all shadow-lg shadow-[#FFD100]/20 self-start sm:self-auto cursor-pointer"
+          className="flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-[#FFD100] hover:bg-[#E6BC00] text-black font-extrabold text-xs shadow-lg shadow-[#FFD100]/20 active:scale-95 transition-all cursor-pointer"
         >
-          <Plus className="w-4 h-4 text-black" strokeWidth={3} />
-          <span>Cadastrar Novo Funcionário</span>
+          <Plus className="w-4 h-4" />
+          <span>Novo Colaborador</span>
         </button>
       </div>
 
-      {/* BARRA DE FILTROS & BUSCA */}
-      <div className="bg-[#181818] border border-[#2B2B2B] p-4 rounded-2xl grid grid-cols-1 sm:grid-cols-3 gap-3">
-        
-        {/* Input de Busca */}
+      {/* BARRA DE PESQUISA E FILTROS */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-[#181818] p-4 rounded-2xl border border-[#2B2B2B]">
+        {/* Campo de Busca */}
         <div className="relative">
           <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Buscar por nome, matrícula ou CPF..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-[#111111] border border-[#333333] focus:border-[#FFD100] rounded-xl py-2.5 pl-10 pr-4 text-xs text-white placeholder-zinc-500 outline-none transition-colors"
+            placeholder="Buscar por nome, CPF ou matrícula..."
+            className="w-full bg-[#111111] border border-[#333333] focus:border-[#FFD100] rounded-xl py-2.5 pl-9 pr-3 text-xs text-white placeholder-zinc-500 outline-none transition-colors"
           />
         </div>
 
@@ -239,11 +233,20 @@ export const EmployeesTab: React.FC = () => {
                 filteredEmployees.map((emp) => (
                   <tr key={emp.id} className="hover:bg-[#202020] transition-colors">
                     
+                    {/* Foto / Nome */}
                     <td className="py-4 px-5">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-[#242424] border border-[#333333] flex items-center justify-center text-[#FFD100] font-bold shrink-0">
-                          {emp.full_name.charAt(0).toUpperCase()}
-                        </div>
+                        {emp.photo_preview ? (
+                          <img
+                            src={emp.photo_preview}
+                            alt={emp.full_name}
+                            className="w-10 h-10 rounded-xl object-cover border border-emerald-500/60 shrink-0 shadow"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-xl bg-[#242424] border border-[#333333] flex items-center justify-center text-[#FFD100] font-bold text-sm shrink-0">
+                            {emp.full_name.charAt(0).toUpperCase()}
+                          </div>
+                        )}
                         <div>
                           <p className="font-extrabold text-white text-sm">{emp.full_name}</p>
                           <p className="text-[11px] text-zinc-400">{emp.role}</p>
@@ -261,20 +264,21 @@ export const EmployeesTab: React.FC = () => {
                       <p className="text-[10px] text-zinc-400">{emp.role}</p>
                     </td>
 
+                    {/* Status da Biometria Facial */}
                     <td className="py-4 px-4 text-center">
                       {emp.has_face_profile ? (
                         <button
                           onClick={() => setEnrollingEmployee(emp)}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-500/30 cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-950/90 hover:bg-emerald-900 text-emerald-400 border border-emerald-500/50 cursor-pointer shadow-sm"
                           title="Clique para recadastrar biometria"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Cadastrado</span>
+                          <span>Face Cadastrada</span>
                         </button>
                       ) : (
                         <button
                           onClick={() => setEnrollingEmployee(emp)}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-950/80 hover:bg-[#FFD100] hover:text-black text-amber-400 border border-amber-500/30 cursor-pointer transition-colors"
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-950/80 hover:bg-[#FFD100] hover:text-black text-amber-400 border border-amber-500/40 cursor-pointer transition-colors"
                           title="Clique para cadastrar biometria facial agora"
                         >
                           <XCircle className="w-3.5 h-3.5" />
