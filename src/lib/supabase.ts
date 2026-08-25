@@ -140,11 +140,29 @@ export const dbService = {
 
   async deleteEmployee(id: string): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
-      await supabase.from('employees').delete().eq('id', id);
+      // Deleta perfis biométricos e registros associados
+      await supabase.from('face_profiles').delete().eq('employee_id', id);
+      await supabase.from('time_records').delete().eq('employee_id', id);
+      await supabase.from('work_sessions').delete().eq('employee_id', id);
+      const { error } = await supabase.from('employees').delete().eq('id', id);
+      if (error) {
+        console.error('Erro ao excluir no Supabase:', error);
+      }
     }
+
+    // Limpa do LocalStorage
     const emps = getStored<Employee>(STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES);
-    const filtered = emps.filter((e) => e.id !== id);
-    setStored(STORAGE_KEYS.EMPLOYEES, filtered);
+    setStored(STORAGE_KEYS.EMPLOYEES, emps.filter((e) => e.id !== id));
+
+    const faces = getStored<FaceProfile>(STORAGE_KEYS.FACE_PROFILES, INITIAL_FACE_PROFILES);
+    setStored(STORAGE_KEYS.FACE_PROFILES, faces.filter((f) => f.employee_id !== id));
+
+    const records = getStored<TimeRecord>(STORAGE_KEYS.TIME_RECORDS, INITIAL_TIME_RECORDS);
+    setStored(STORAGE_KEYS.TIME_RECORDS, records.filter((r) => r.employee_id !== id));
+
+    const sessions = getStored<WorkSession>(STORAGE_KEYS.WORK_SESSIONS, INITIAL_WORK_SESSIONS);
+    setStored(STORAGE_KEYS.WORK_SESSIONS, sessions.filter((s) => s.employee_id !== id));
+
     await this.logAudit('EXCLUSAO_FUNCIONARIO', { id }, id);
     return true;
   },
@@ -183,6 +201,7 @@ export const dbService = {
         provider_reference: 'mp_biometrics_v1',
         template_version: 'v1.0',
         descriptor,
+        photo_preview: photoPreview || null,
         status: 'ATIVO',
         updated_at: nowIso,
       }, { onConflict: 'employee_id' }).select().single();

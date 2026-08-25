@@ -1,6 +1,6 @@
 -- ==============================================================================
--- MP CARGAS — PONTO ELETRÔNICO CORPORATIVO (BANCO DE PRODUÇÃO LIMPO)
--- Script SQL DDL Oficial para Supabase (PostgreSQL) com RLS, Triggers e Índices
+-- MP CARGAS — PONTO ELETRÔNICO CORPORATIVO (BANCO DE PRODUÇÃO ATUALIZADO)
+-- Script SQL Completo com ON DELETE CASCADE, Foto de Referência e RLS
 -- ==============================================================================
 
 -- 1. EXTENSÕES
@@ -21,13 +21,14 @@ CREATE TABLE IF NOT EXISTS public.employees (
 );
 
 -- 3. TABELA DE PERFIS FACIAIS BIOMÉTRICOS (face_profiles)
--- Armazena APENAS o vetor descritor matemático (128D) para conformidade com a LGPD
+-- Armazena o vetor descritor e a foto de referência do 1º Scan
 CREATE TABLE IF NOT EXISTS public.face_profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
     provider_reference VARCHAR(100) DEFAULT 'mp_biometrics_v1',
     template_version VARCHAR(20) DEFAULT 'v1.0',
-    descriptor JSONB NOT NULL, -- Vetor float 128D dos pontos faciais
+    descriptor JSONB NOT NULL, -- Vetor numérico 64D/128D das feições faciais
+    photo_preview TEXT, -- Miniatura base64 do 1º Scan para conferência visual
     status VARCHAR(20) NOT NULL DEFAULT 'ATIVO' CHECK (status IN ('ATIVO', 'PENDENTE', 'REVOGADO')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -46,9 +47,10 @@ CREATE TABLE IF NOT EXISTS public.devices (
 );
 
 -- 5. TABELA DE REGISTROS DE PONTO (time_records)
+-- CASCADE permite excluir o colaborador sem erro de chave estrangeira
 CREATE TABLE IF NOT EXISTS public.time_records (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE RESTRICT,
+    employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
     device_id UUID NOT NULL REFERENCES public.devices(id) ON DELETE RESTRICT,
     record_type VARCHAR(30) NOT NULL CHECK (record_type IN ('ENTRADA', 'INICIO_INTERVALO', 'RETORNO_INTERVALO', 'SAIDA')),
     recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -63,14 +65,14 @@ CREATE TABLE IF NOT EXISTS public.time_records (
     idempotency_key VARCHAR(100) UNIQUE NOT NULL,
     is_corrected BOOLEAN DEFAULT FALSE,
     correction_reason TEXT,
-    original_record_id UUID REFERENCES public.time_records(id),
+    original_record_id UUID REFERENCES public.time_records(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 6. TABELA DE JORNADAS DE TRABALHO (work_sessions)
 CREATE TABLE IF NOT EXISTS public.work_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE RESTRICT,
+    employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
     session_date DATE NOT NULL DEFAULT CURRENT_DATE,
     started_at TIMESTAMPTZ,
     break_started_at TIMESTAMPTZ,
@@ -128,7 +130,7 @@ DROP TRIGGER IF EXISTS trg_work_sessions_updated ON public.work_sessions;
 CREATE TRIGGER trg_work_sessions_updated BEFORE UPDATE ON public.work_sessions FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 -- ==============================================================================
--- ROW LEVEL SECURITY (RLS)
+-- ROW LEVEL SECURITY (RLS) - ACESSO TOTAL & PERMISSÕES
 -- ==============================================================================
 ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.face_profiles ENABLE ROW LEVEL SECURITY;
@@ -137,7 +139,7 @@ ALTER TABLE public.time_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.work_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
--- Limpa políticas se existirem
+-- Limpa políticas anteriores se existirem
 DROP POLICY IF EXISTS "Acesso total a funcionarios" ON public.employees;
 DROP POLICY IF EXISTS "Acesso total a perfis biometricos" ON public.face_profiles;
 DROP POLICY IF EXISTS "Acesso total a dispositivos" ON public.devices;
@@ -145,7 +147,7 @@ DROP POLICY IF EXISTS "Acesso total a registros de ponto" ON public.time_records
 DROP POLICY IF EXISTS "Acesso total a jornadas" ON public.work_sessions;
 DROP POLICY IF EXISTS "Acesso total a auditoria" ON public.audit_logs;
 
--- Políticas de Acesso Total e Segurança
+-- Políticas de Acesso Total e Exclusão Segura
 CREATE POLICY "Acesso total a funcionarios" ON public.employees FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Acesso total a perfis biometricos" ON public.face_profiles FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Acesso total a dispositivos" ON public.devices FOR ALL USING (true) WITH CHECK (true);
