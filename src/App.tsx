@@ -3,13 +3,32 @@ import { Header } from './components/common/Header';
 import { InstallPwaBanner } from './components/common/InstallPwaBanner';
 import { EmployeeHome } from './components/employee/EmployeeHome';
 import { AdminLayout } from './components/admin/AdminLayout';
+import { LoginScreen } from './components/auth/LoginScreen';
 import { dbService } from './lib/supabase';
 import { getLocalDeviceIdentifier, getLocalDeviceName } from './lib/deviceManager';
 import { syncManager } from './lib/offlineSync';
-import type { Device } from './types';
+import type { Device, Employee } from './types';
+
+interface AuthSession {
+  role: 'admin' | 'employee';
+  employee?: Employee;
+}
+
+const AUTH_STORAGE_KEY = 'mp_cargas_auth_session';
 
 export function App() {
-  const [currentView, setCurrentView] = useState<'employee' | 'admin'>('employee');
+  const [authSession, setAuthSession] = useState<AuthSession | null>(() => {
+    const saved = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
+
   const [currentDevice, setCurrentDevice] = useState<Device | null>(null);
 
   // Status de Rede & Sincronização
@@ -50,6 +69,26 @@ export function App() {
     return () => unsubscribe();
   }, []);
 
+  const handleLoginSuccess = (session: AuthSession) => {
+    setAuthSession(session);
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+  };
+
+  const handleLogout = () => {
+    setAuthSession(null);
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+  };
+
+  // Se não estiver autenticado, exibe a tela de login
+  if (!authSession) {
+    return (
+      <div className="min-h-screen bg-[#111111] text-white flex flex-col font-sans">
+        <InstallPwaBanner />
+        <LoginScreen onLoginSuccess={handleLoginSuccess} />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#111111] text-white flex flex-col font-sans">
       
@@ -58,8 +97,9 @@ export function App() {
 
       {/* Header Corporativo MP CARGAS */}
       <Header
-        currentView={currentView}
-        onViewChange={(view) => setCurrentView(view)}
+        currentView={authSession.role}
+        loggedEmployee={authSession.employee}
+        onLogout={handleLogout}
         isOnline={networkStatus.isOnline}
         isSyncing={networkStatus.isSyncing}
         pendingCount={networkStatus.pendingCount}
@@ -72,17 +112,17 @@ export function App() {
         </div>
       )}
 
-      {/* Visualização Ativa */}
+      {/* Visualização Ativa Conforme o Perfil Autenticado */}
       <main className="flex-1">
-        {currentView === 'employee' ? (
+        {authSession.role === 'employee' && authSession.employee ? (
           <EmployeeHome
+            loggedEmployee={authSession.employee}
             currentDevice={currentDevice}
             isOnline={networkStatus.isOnline}
             pendingCount={networkStatus.pendingCount}
-            onGoToAdmin={() => setCurrentView('admin')}
           />
         ) : (
-          <AdminLayout onBackToEmployee={() => setCurrentView('employee')} />
+          <AdminLayout onBackToEmployee={handleLogout} />
         )}
       </main>
     </div>

@@ -6,7 +6,7 @@ import {
   Smartphone, 
   ShieldAlert, 
   Database,
-  ArrowLeft
+  LogOut
 } from 'lucide-react';
 import { DashboardTab } from './DashboardTab';
 import { EmployeesTab } from './EmployeesTab';
@@ -56,7 +56,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToEmployee }) =>
           ))}
         </div>
 
-        {/* Status do Backend Supabase e Atalho para Ponto Móvel */}
+        {/* Status do Backend Supabase e Botão Sair */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#181818] border border-[#2B2B2B] text-xs">
             <Database className="w-3.5 h-3.5 text-[#FFD100]" />
@@ -68,10 +68,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onBackToEmployee }) =>
 
           <button
             onClick={onBackToEmployee}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#242424] hover:bg-[#303030] border border-[#3A3A3A] text-xs font-bold text-zinc-300 transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#242424] hover:bg-red-950/80 border border-[#3A3A3A] hover:border-red-500/40 text-xs font-bold text-zinc-300 hover:text-red-400 transition-colors cursor-pointer"
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Ponto Móvel</span>
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Sair do Painel</span>
           </button>
         </div>
       </div>

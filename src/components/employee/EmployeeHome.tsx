@@ -4,12 +4,10 @@ import {
   Calendar, 
   User, 
   MapPin, 
-  ChevronDown, 
   History, 
   AlertCircle, 
   Smartphone,
-  ShieldCheck,
-  UserPlus
+  ShieldCheck
 } from 'lucide-react';
 import type { Employee, RecordType, WorkSessionStatus, WorkSession, Device } from '../../types';
 import { dbService } from '../../lib/supabase';
@@ -20,18 +18,15 @@ import { EmployeeHistoryModal } from './EmployeeHistoryModal';
 
 interface EmployeeHomeProps {
   currentDevice: Device | null;
+  loggedEmployee: Employee;
   isOnline: boolean;
   pendingCount: number;
-  onGoToAdmin?: () => void;
 }
 
 export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
   currentDevice,
-  onGoToAdmin,
+  loggedEmployee,
 }) => {
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
-  const [showEmployeePicker, setShowEmployeePicker] = useState(false);
   const [workSession, setWorkSession] = useState<WorkSession | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -55,32 +50,12 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // Carrega funcionários ativos
+  // Atualiza a jornada do funcionário logado
   useEffect(() => {
-    loadEmployees();
-  }, []);
-
-  // Atualiza a jornada do funcionário selecionado
-  useEffect(() => {
-    if (selectedEmployee) {
-      loadEmployeeSession(selectedEmployee.id);
+    if (loggedEmployee) {
+      loadEmployeeSession(loggedEmployee.id);
     }
-  }, [selectedEmployee]);
-
-  const loadEmployees = async () => {
-    try {
-      const list = await dbService.getEmployees();
-      const activeList = list.filter((e) => e.status === 'ATIVO');
-      setEmployees(activeList);
-      if (activeList.length > 0) {
-        setSelectedEmployee(activeList[0]);
-      } else {
-        setSelectedEmployee(null);
-      }
-    } catch (err) {
-      console.error('Erro ao carregar funcionários:', err);
-    }
-  };
+  }, [loggedEmployee]);
 
   const loadEmployeeSession = async (empId: string) => {
     try {
@@ -156,11 +131,6 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
   const currentAction = getNextAction();
 
   const handleMainPunchClick = (actionTypeOverride?: RecordType) => {
-    if (!selectedEmployee) {
-      setValidationAlert('Nenhum colaborador cadastrado. Cadastre no Painel Admin.');
-      return;
-    }
-
     setValidationAlert(null);
     const targetType = actionTypeOverride || currentAction.type;
     const status: WorkSessionStatus = workSession?.status || 'NAO_INICIADO';
@@ -206,8 +176,8 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
     setIsCameraOpen(false);
     setLastPunchDetails(details);
     setIsSuccessOpen(true);
-    if (selectedEmployee) {
-      loadEmployeeSession(selectedEmployee.id);
+    if (loggedEmployee) {
+      loadEmployeeSession(loggedEmployee.id);
     }
   };
 
@@ -216,98 +186,32 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
     return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   };
 
-  // Se ainda não houver nenhum funcionário cadastrado no sistema
-  if (employees.length === 0) {
-    return (
-      <div className="min-h-[calc(100vh-65px)] bg-[#111111] text-white flex flex-col items-center justify-center p-6 max-w-md mx-auto text-center space-y-5 animate-fadeIn">
-        <div className="w-20 h-20 rounded-3xl bg-[#FFD100]/10 border-2 border-[#FFD100] flex items-center justify-center text-[#FFD100] shadow-xl shadow-[#FFD100]/10">
-          <UserPlus className="w-10 h-10" />
-        </div>
-        <div>
-          <h2 className="text-2xl font-black text-white tracking-tight">NENHUM FUNCIONÁRIO CADASTRADO</h2>
-          <p className="text-xs text-zinc-400 mt-2 leading-relaxed">
-            O banco está pronto e limpo para receber a equipe da <b>MP CARGAS</b>. Acesse o Painel Administrativo para cadastrar os colaboradores e suas biometrias faciais.
-          </p>
-        </div>
-        {onGoToAdmin && (
-          <button
-            onClick={onGoToAdmin}
-            className="w-full py-4 px-6 rounded-2xl bg-[#FFD100] hover:bg-[#E6BC00] text-black font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-[#FFD100]/20 active:scale-95 transition-all cursor-pointer"
-          >
-            <UserPlus className="w-4 h-4 text-black" />
-            <span>Acessar Painel Admin & Cadastrar Equipe</span>
-          </button>
-        )}
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-[calc(100vh-65px)] bg-[#111111] text-white flex flex-col justify-between p-4 sm:p-6 max-w-lg mx-auto w-full">
+    <div className="min-h-[calc(100vh-65px)] bg-[#111111] text-white flex flex-col justify-between p-4 sm:p-6 max-w-lg mx-auto w-full animate-fadeIn">
       
-      {/* 1. IDENTIFICAÇÃO DO COLABORADOR */}
+      {/* 1. IDENTIFICAÇÃO DO COLABORADOR LOGADO */}
       <div className="space-y-4">
-        <div className="relative">
-          <div
-            onClick={() => setShowEmployeePicker(!showEmployeePicker)}
-            className="bg-[#181818] border border-[#2B2B2B] hover:border-[#FFD100]/50 rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all active:scale-[0.99] shadow-lg"
-          >
-            <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-xl bg-[#FFD100] flex items-center justify-center text-black font-extrabold text-lg shrink-0 shadow-md">
-                <User className="w-6 h-6 text-[#111111]" strokeWidth={2.5} />
-              </div>
-              <div className="text-left">
-                <p className="text-[10px] uppercase font-bold tracking-widest text-[#FFD100]">
-                  Funcionário
-                </p>
-                <h2 className="text-base font-black text-white leading-tight">
-                  {selectedEmployee?.full_name}
-                </h2>
-                <p className="text-xs text-zinc-400 font-medium">
-                  Matrícula: <span className="font-mono text-zinc-300">{selectedEmployee?.employee_code}</span> • {selectedEmployee?.role}
-                </p>
-              </div>
+        <div className="bg-[#181818] border border-[#2B2B2B] rounded-2xl p-4 flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-xl bg-[#FFD100] flex items-center justify-center text-black font-extrabold text-lg shrink-0 shadow-md">
+              <User className="w-6 h-6 text-[#111111]" strokeWidth={2.5} />
             </div>
-            {employees.length > 1 && (
-              <div className="w-8 h-8 rounded-lg bg-[#242424] flex items-center justify-center text-zinc-400">
-                <ChevronDown className={`w-4 h-4 transition-transform ${showEmployeePicker ? 'rotate-180' : ''}`} />
-              </div>
-            )}
-          </div>
-
-          {/* Menu Dropdown se houver mais de 1 funcionário */}
-          {showEmployeePicker && employees.length > 1 && (
-            <div className="absolute top-full left-0 right-0 mt-2 bg-[#1C1C1C] border border-[#333333] rounded-2xl p-2 shadow-2xl z-30 space-y-1 max-h-60 overflow-y-auto animate-fadeIn">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 px-3 py-1.5 border-b border-[#2A2A2A]">
-                Alternar Colaborador no Aparelho
+            <div className="text-left">
+              <p className="text-[10px] uppercase font-bold tracking-widest text-[#FFD100]">
+                Colaborador Conectado
               </p>
-              {employees.map((emp) => (
-                <button
-                  key={emp.id}
-                  onClick={() => {
-                    setSelectedEmployee(emp);
-                    setShowEmployeePicker(false);
-                  }}
-                  className={`w-full text-left p-3 rounded-xl flex items-center justify-between text-xs font-semibold transition-colors cursor-pointer ${
-                    selectedEmployee?.id === emp.id
-                      ? 'bg-[#FFD100] text-black font-bold'
-                      : 'hover:bg-[#282828] text-zinc-200'
-                  }`}
-                >
-                  <div>
-                    <p className="font-bold">{emp.full_name}</p>
-                    <p className={`text-[10px] ${selectedEmployee?.id === emp.id ? 'text-black/80' : 'text-zinc-400'}`}>
-                      {emp.employee_code} — {emp.role}
-                    </p>
-                  </div>
-                  {emp.has_face_profile && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/40">
-                      Face OK
-                    </span>
-                  )}
-                </button>
-              ))}
+              <h2 className="text-base font-black text-white leading-tight">
+                {loggedEmployee.full_name}
+              </h2>
+              <p className="text-xs text-zinc-400 font-medium">
+                Matrícula: <span className="font-mono text-zinc-300">{loggedEmployee.employee_code}</span> • {loggedEmployee.role}
+              </p>
             </div>
+          </div>
+          {loggedEmployee.has_face_profile && (
+            <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/40">
+              Face OK
+            </span>
           )}
         </div>
 
@@ -442,22 +346,20 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
       </div>
 
       {/* MODAIS */}
-      {selectedEmployee && (
-        <CameraPunchModal
-          isOpen={isCameraOpen}
-          onClose={() => setIsCameraOpen(false)}
-          employee={selectedEmployee}
-          recordType={currentAction.type}
-          device={currentDevice}
-          onSuccess={handlePunchSuccess}
-        />
-      )}
+      <CameraPunchModal
+        isOpen={isCameraOpen}
+        onClose={() => setIsCameraOpen(false)}
+        employee={loggedEmployee}
+        recordType={currentAction.type}
+        device={currentDevice}
+        onSuccess={handlePunchSuccess}
+      />
 
       {lastPunchDetails && (
         <PunchSuccessModal
           isOpen={isSuccessOpen}
           onClose={() => setIsSuccessOpen(false)}
-          employeeName={selectedEmployee?.full_name || 'Funcionário'}
+          employeeName={loggedEmployee.full_name}
           recordType={lastPunchDetails.recordType}
           recordedAt={lastPunchDetails.recordedAt}
           locationAddress={lastPunchDetails.locationAddress}
@@ -466,13 +368,11 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
         />
       )}
 
-      {selectedEmployee && (
-        <EmployeeHistoryModal
-          isOpen={isHistoryOpen}
-          onClose={() => setIsHistoryOpen(false)}
-          employee={selectedEmployee}
-        />
-      )}
+      <EmployeeHistoryModal
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        employee={loggedEmployee}
+      />
     </div>
   );
 };
