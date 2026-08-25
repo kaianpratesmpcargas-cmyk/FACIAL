@@ -10,10 +10,11 @@ import {
   Smartphone, 
   Clock, 
   RefreshCw,
-  ExternalLink 
+  ExternalLink,
+  Activity
 } from 'lucide-react';
 import { dbService } from '../../lib/supabase';
-import type { TimeRecord } from '../../types';
+import type { TimeRecord, Employee, WorkSession } from '../../types';
 import { StatusBadge } from '../common/Badge';
 import { getGoogleMapsUrl } from '../../lib/location';
 
@@ -29,6 +30,8 @@ export const DashboardTab: React.FC = () => {
   });
 
   const [todayRecords, setTodayRecords] = useState<TimeRecord[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -45,6 +48,12 @@ export const DashboardTab: React.FC = () => {
       const todayStr = new Date().toISOString().split('T')[0];
       const records = await dbService.getTimeRecords({ date: todayStr });
       setTodayRecords(records);
+
+      const emps = await dbService.getEmployees();
+      setEmployees(emps);
+
+      const sessions = await dbService.getWorkSessions({ session_date: todayStr });
+      setWorkSessions(sessions);
     } catch (err) {
       console.error('Erro ao carregar dados do dashboard:', err);
     } finally {
@@ -154,6 +163,55 @@ export const DashboardTab: React.FC = () => {
             <p className="text-2xl sm:text-3xl font-mono font-black text-white">{stats.totalRecordsToday}</p>
             <p className="text-[10px] text-zinc-400 font-medium mt-0.5">Batidas confirmadas</p>
           </div>
+        </div>
+      </div>
+
+      {/* SEÇÃO AGORA — QUEM ESTÁ TRABALHANDO EM TEMPO REAL */}
+      <div className="bg-[#181818] border border-[#2B2B2B] rounded-3xl p-5 shadow-xl space-y-4">
+        <div className="flex items-center justify-between border-b border-[#262626] pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-[#FFD100] flex items-center justify-center text-black font-black">
+              <Activity className="w-4 h-4 text-black stroke-[3]" />
+            </div>
+            <div>
+              <h2 className="text-base font-extrabold text-white">AGORA — STATUS EM TEMPO REAL</h2>
+              <p className="text-xs text-zinc-400">Situação instantânea da equipe e jornadas operacionais</p>
+            </div>
+          </div>
+          <span className="text-xs font-mono font-bold px-3 py-1 rounded-full bg-[#111111] text-[#22C55E] border border-emerald-500/30">
+            {stats.emJornada} Ativos no Momento
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {employees.slice(0, 6).map((emp) => {
+            const session = workSessions.find((s) => s.employee_id === emp.id);
+            const status = session?.status || 'NAO_INICIADO';
+            const startTime = session?.started_at
+              ? new Date(session.started_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+              : '--:--';
+
+            return (
+              <div
+                key={emp.id}
+                className="bg-[#111111] border border-[#262626] hover:border-[#3A3A3A] p-3.5 rounded-2xl flex items-center justify-between transition-colors"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-[#242424] border border-[#333333] flex items-center justify-center text-[#FFD100] font-black text-sm shrink-0">
+                    {emp.full_name.charAt(0)}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-white truncate">{emp.full_name}</p>
+                    <p className="text-[11px] text-zinc-400 truncate">{emp.role}</p>
+                    <p className="text-[10px] text-zinc-500 font-mono mt-0.5">Entrada: {startTime}</p>
+                  </div>
+                </div>
+                <div className="shrink-0 pl-2">
+                  <StatusBadge status={status} />
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

@@ -371,17 +371,12 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
         {/* Header do Sistema de Acesso */}
         <div className="p-4 bg-[#181818] border-b border-[#262626] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#22C55E] flex items-center justify-center text-black font-black shadow-lg shadow-emerald-500/20">
+            <div className="w-9 h-9 rounded-xl bg-[#FFD100] flex items-center justify-center text-black font-black shadow-lg">
               <Scan className="w-5 h-5 text-black stroke-[2.5]" />
             </div>
             <div>
-              <h3 className="font-extrabold text-sm text-white flex items-center gap-1.5">
-                <span>VALIDAÇÃO BIOMÉTRICA</span>
-                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/30">
-                  AUTOMÁTICA
-                </span>
-              </h3>
-              <p className="text-[11px] text-zinc-400 font-medium">MP CARGAS — Ponto Eletrônico</p>
+              <h3 className="font-extrabold text-sm text-white">VALIDAÇÃO FACIAL</h3>
+              <p className="text-[11px] text-zinc-400 font-medium">Posicione seu rosto para registrar o ponto</p>
             </div>
           </div>
           <button
@@ -480,7 +475,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
 
               {/* Tag de Status Flutuante Topo */}
               <div className="absolute top-3 inset-x-0 flex justify-center pointer-events-none z-30">
-                <div className={`px-4 py-1.5 rounded-full text-xs font-mono font-black backdrop-blur-md border transition-all flex items-center gap-2 ${
+                <div className={`px-4 py-1.5 rounded-full text-xs font-bold backdrop-blur-md border transition-all flex items-center gap-2 ${
                   progress >= 100
                     ? 'bg-emerald-950/95 text-emerald-400 border-emerald-500/50 shadow-lg shadow-emerald-900/30'
                     : isFaceValid
@@ -494,7 +489,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
                   ) : (
                     <Scan className="w-3.5 h-3.5 text-zinc-400 animate-pulse" />
                   )}
-                  <span>{progress}% • {progress >= 100 ? 'VALIDADO' : isFaceValid ? 'ANALISANDO' : 'ENQUADRE'}</span>
+                  <span>{progress >= 100 ? '✓ IDENTIDADE CONFIRMADA' : isFaceValid ? `ANALISANDO (${progress}%)` : 'POSICIONE O ROSTO'}</span>
                 </div>
               </div>
 

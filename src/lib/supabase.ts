@@ -687,6 +687,20 @@ export const dbService = {
     return sessions.find(s => s.employee_id === employeeId && s.session_date === targetDate) || null;
   },
 
+  async getWorkSessions(filters?: { session_date?: string }): Promise<WorkSession[]> {
+    const targetDate = filters?.session_date || new Date().toISOString().split('T')[0];
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data } = await supabase.from('work_sessions').select('*').eq('session_date', targetDate);
+        if (data) return data;
+      } catch (err) {
+        console.warn('Erro ao buscar jornadas no Supabase:', err);
+      }
+    }
+    const sessions = getStored<WorkSession>(STORAGE_KEYS.WORK_SESSIONS, INITIAL_WORK_SESSIONS);
+    return sessions.filter(s => s.session_date === targetDate);
+  },
+
   async createTimeRecord(data: {
     employee_id: string;
     device_id: string;
@@ -712,7 +726,7 @@ export const dbService = {
 
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data: record } = await supabase.from('time_records').insert({
+        const { data: record } = await supabase.from('time_records').upsert({
           employee_id: data.employee_id,
           device_id: data.device_id,
           record_type: data.record_type,
@@ -727,7 +741,7 @@ export const dbService = {
           verification_score: data.verification_score ?? 0.99,
           sync_status: data.sync_status || 'SINCRONIZADO',
           idempotency_key: idempotencyKey,
-        }).select().single();
+        }, { onConflict: 'idempotency_key' }).select().single();
 
         const sessionDate = recordedAt.split('T')[0];
         let status: any = 'EM_JORNADA';
