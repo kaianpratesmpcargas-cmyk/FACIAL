@@ -8,7 +8,8 @@ import {
   History, 
   AlertCircle, 
   Smartphone,
-  ShieldCheck
+  ShieldCheck,
+  UserPlus
 } from 'lucide-react';
 import type { Employee, RecordType, WorkSessionStatus, WorkSession, Device } from '../../types';
 import { dbService } from '../../lib/supabase';
@@ -21,10 +22,12 @@ interface EmployeeHomeProps {
   currentDevice: Device | null;
   isOnline: boolean;
   pendingCount: number;
+  onGoToAdmin?: () => void;
 }
 
 export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
   currentDevice,
+  onGoToAdmin,
 }) => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
@@ -52,7 +55,7 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // Carrega funcionários ativos e define o primeiro
+  // Carrega funcionários ativos
   useEffect(() => {
     loadEmployees();
   }, []);
@@ -69,8 +72,10 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
       const list = await dbService.getEmployees();
       const activeList = list.filter((e) => e.status === 'ATIVO');
       setEmployees(activeList);
-      if (activeList.length > 0 && !selectedEmployee) {
+      if (activeList.length > 0) {
         setSelectedEmployee(activeList[0]);
+      } else {
+        setSelectedEmployee(null);
       }
     } catch (err) {
       console.error('Erro ao carregar funcionários:', err);
@@ -93,7 +98,6 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
     label: string;
     description: string;
     canPunch: boolean;
-    blockReason?: string;
   } => {
     const status: WorkSessionStatus = workSession?.status || 'NAO_INICIADO';
 
@@ -101,7 +105,7 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
       return {
         type: 'ENTRADA',
         label: 'REGISTRAR ENTRADA',
-        description: 'Iniciar jornada de trabalho de hoje',
+        description: 'Iniciar jornada de trabalho',
         canPunch: true,
       };
     }
@@ -136,16 +140,15 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
       return {
         type: 'ENTRADA',
         label: 'JORNADA FINALIZADA',
-        description: 'Todos os registros do dia foram concluídos',
+        description: 'Todos os registros de hoje foram concluídos',
         canPunch: false,
-        blockReason: 'Jornada já finalizada na data de hoje.',
       };
     }
 
     return {
       type: 'ENTRADA',
       label: 'REGISTRAR PONTO',
-      description: 'Registro de ponto eletrônico',
+      description: 'Registro facial instantâneo',
       canPunch: true,
     };
   };
@@ -153,9 +156,13 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
   const currentAction = getNextAction();
 
   const handleMainPunchClick = (actionTypeOverride?: RecordType) => {
+    if (!selectedEmployee) {
+      setValidationAlert('Nenhum colaborador cadastrado. Cadastre no Painel Admin.');
+      return;
+    }
+
     setValidationAlert(null);
     const targetType = actionTypeOverride || currentAction.type;
-
     const status: WorkSessionStatus = workSession?.status || 'NAO_INICIADO';
 
     if (targetType === 'ENTRADA' && status !== 'NAO_INICIADO') {
@@ -209,10 +216,36 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
     return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   };
 
+  // Se ainda não houver nenhum funcionário cadastrado no sistema
+  if (employees.length === 0) {
+    return (
+      <div className="min-h-[calc(100vh-65px)] bg-[#111111] text-white flex flex-col items-center justify-center p-6 max-w-md mx-auto text-center space-y-5 animate-fadeIn">
+        <div className="w-20 h-20 rounded-3xl bg-[#FFD100]/10 border-2 border-[#FFD100] flex items-center justify-center text-[#FFD100] shadow-xl shadow-[#FFD100]/10">
+          <UserPlus className="w-10 h-10" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-black text-white tracking-tight">NENHUM FUNCIONÁRIO CADASTRADO</h2>
+          <p className="text-xs text-zinc-400 mt-2 leading-relaxed">
+            O banco está pronto e limpo para receber a equipe da <b>MP CARGAS</b>. Acesse o Painel Administrativo para cadastrar os colaboradores e suas biometrias faciais.
+          </p>
+        </div>
+        {onGoToAdmin && (
+          <button
+            onClick={onGoToAdmin}
+            className="w-full py-4 px-6 rounded-2xl bg-[#FFD100] hover:bg-[#E6BC00] text-black font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-[#FFD100]/20 active:scale-95 transition-all cursor-pointer"
+          >
+            <UserPlus className="w-4 h-4 text-black" />
+            <span>Acessar Painel Admin & Cadastrar Equipe</span>
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-[calc(100vh-65px)] bg-[#111111] text-white flex flex-col justify-between p-4 sm:p-6 max-w-lg mx-auto w-full">
       
-      {/* 1. SELETOR / IDENTIFICAÇÃO DO FUNCIONÁRIO */}
+      {/* 1. IDENTIFICAÇÃO DO COLABORADOR */}
       <div className="space-y-4">
         <div className="relative">
           <div
@@ -225,26 +258,28 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
               </div>
               <div className="text-left">
                 <p className="text-[10px] uppercase font-bold tracking-widest text-[#FFD100]">
-                  Funcionário Selecionado
+                  Funcionário
                 </p>
                 <h2 className="text-base font-black text-white leading-tight">
-                  {selectedEmployee?.full_name || 'Selecione um funcionário'}
+                  {selectedEmployee?.full_name}
                 </h2>
                 <p className="text-xs text-zinc-400 font-medium">
                   Matrícula: <span className="font-mono text-zinc-300">{selectedEmployee?.employee_code}</span> • {selectedEmployee?.role}
                 </p>
               </div>
             </div>
-            <div className="w-8 h-8 rounded-lg bg-[#242424] flex items-center justify-center text-zinc-400">
-              <ChevronDown className={`w-4 h-4 transition-transform ${showEmployeePicker ? 'rotate-180' : ''}`} />
-            </div>
+            {employees.length > 1 && (
+              <div className="w-8 h-8 rounded-lg bg-[#242424] flex items-center justify-center text-zinc-400">
+                <ChevronDown className={`w-4 h-4 transition-transform ${showEmployeePicker ? 'rotate-180' : ''}`} />
+              </div>
+            )}
           </div>
 
-          {/* Menu Dropdown de Troca de Funcionário */}
-          {showEmployeePicker && (
+          {/* Menu Dropdown se houver mais de 1 funcionário */}
+          {showEmployeePicker && employees.length > 1 && (
             <div className="absolute top-full left-0 right-0 mt-2 bg-[#1C1C1C] border border-[#333333] rounded-2xl p-2 shadow-2xl z-30 space-y-1 max-h-60 overflow-y-auto animate-fadeIn">
               <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 px-3 py-1.5 border-b border-[#2A2A2A]">
-                Alternar Colaborador (Dispositivo Corporativo)
+                Alternar Colaborador no Aparelho
               </p>
               {employees.map((emp) => (
                 <button
@@ -253,7 +288,7 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
                     setSelectedEmployee(emp);
                     setShowEmployeePicker(false);
                   }}
-                  className={`w-full text-left p-3 rounded-xl flex items-center justify-between text-xs font-semibold transition-colors ${
+                  className={`w-full text-left p-3 rounded-xl flex items-center justify-between text-xs font-semibold transition-colors cursor-pointer ${
                     selectedEmployee?.id === emp.id
                       ? 'bg-[#FFD100] text-black font-bold'
                       : 'hover:bg-[#282828] text-zinc-200'
@@ -276,9 +311,8 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
           )}
         </div>
 
-        {/* 2. CARD DE RELÓGIO & STATUS DA JORNADA */}
+        {/* 2. CARD DO RELÓGIO & STATUS DA JORNADA */}
         <div className="bg-[#181818] border border-[#2B2B2B] rounded-3xl p-6 text-center shadow-xl relative overflow-hidden">
-          
           <div className="flex items-center justify-center mb-3">
             <StatusBadge status={workSession?.status || 'NAO_INICIADO'} className="text-xs px-3.5 py-1.5" />
           </div>
@@ -311,7 +345,7 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
           )}
         </div>
 
-        {/* 3. BOTÃO PRINCIPAL GIGANTE — REGISTRO DE PONTO TOUCH */}
+        {/* 3. BOTÃO PRINCIPAL GIGANTE — REGISTRAR PONTO */}
         <div className="py-2">
           <button
             onClick={() => handleMainPunchClick()}
@@ -332,18 +366,18 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
           </button>
         </div>
 
-        {/* 4. AÇÕES RÁPIDAS SECUNDÁRIAS (SELEÇÃO DIRETA DO TIPO DE BATIDA) */}
+        {/* 4. AÇÕES RÁPIDAS SECUNDÁRIAS */}
         {workSession?.status === 'EM_JORNADA' && (
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => handleMainPunchClick('INICIO_INTERVALO')}
-              className="py-3 px-4 rounded-2xl bg-[#1C1C1C] hover:bg-[#252525] border border-amber-500/40 text-amber-400 text-xs font-extrabold flex items-center justify-center gap-2 transition-all active:scale-95"
+              className="py-3 px-4 rounded-2xl bg-[#1C1C1C] hover:bg-[#252525] border border-amber-500/40 text-amber-400 text-xs font-extrabold flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
             >
               <span>Intervalo</span>
             </button>
             <button
               onClick={() => handleMainPunchClick('SAIDA')}
-              className="py-3 px-4 rounded-2xl bg-[#1C1C1C] hover:bg-[#252525] border border-purple-500/40 text-purple-400 text-xs font-extrabold flex items-center justify-center gap-2 transition-all active:scale-95"
+              className="py-3 px-4 rounded-2xl bg-[#1C1C1C] hover:bg-[#252525] border border-purple-500/40 text-purple-400 text-xs font-extrabold flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
             >
               <span>Encerrar Saída</span>
             </button>
@@ -359,7 +393,7 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
             </h3>
             <button
               onClick={() => setIsHistoryOpen(true)}
-              className="text-xs font-bold text-[#FFD100] hover:underline flex items-center gap-1"
+              className="text-xs font-bold text-[#FFD100] hover:underline flex items-center gap-1 cursor-pointer"
             >
               <History className="w-3.5 h-3.5" />
               <span>Ver Histórico</span>
@@ -395,7 +429,7 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
         </div>
       </div>
 
-      {/* 6. RODAPÉ DO CELULAR CORPORATIVO */}
+      {/* 6. RODAPÉ */}
       <div className="mt-4 pt-3 border-t border-[#222222] flex items-center justify-between text-[11px] text-zinc-500">
         <span className="flex items-center gap-1">
           <Smartphone className="w-3 h-3 text-zinc-400" />
@@ -407,7 +441,7 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
         </span>
       </div>
 
-      {/* MODAL DE CÂMERA & LIVENESS */}
+      {/* MODAIS */}
       {selectedEmployee && (
         <CameraPunchModal
           isOpen={isCameraOpen}
@@ -419,7 +453,6 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
         />
       )}
 
-      {/* MODAL DE SUCESSO DO PONTO */}
       {lastPunchDetails && (
         <PunchSuccessModal
           isOpen={isSuccessOpen}
@@ -433,7 +466,6 @@ export const EmployeeHome: React.FC<EmployeeHomeProps> = ({
         />
       )}
 
-      {/* MODAL DE HISTÓRICO PRÓPRIO */}
       {selectedEmployee && (
         <EmployeeHistoryModal
           isOpen={isHistoryOpen}

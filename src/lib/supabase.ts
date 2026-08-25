@@ -22,305 +22,21 @@ export const supabase = isSupabaseConfigured
   : null;
 
 const STORAGE_KEYS = {
-  EMPLOYEES: 'mp_cargas_db_employees',
-  FACE_PROFILES: 'mp_cargas_db_face_profiles',
-  DEVICES: 'mp_cargas_db_devices',
-  TIME_RECORDS: 'mp_cargas_db_time_records',
-  WORK_SESSIONS: 'mp_cargas_db_work_sessions',
-  AUDIT_LOGS: 'mp_cargas_db_audit_logs',
+  EMPLOYEES: 'mp_cargas_db_employees_v2',
+  FACE_PROFILES: 'mp_cargas_db_face_profiles_v2',
+  DEVICES: 'mp_cargas_db_devices_v2',
+  TIME_RECORDS: 'mp_cargas_db_time_records_v2',
+  WORK_SESSIONS: 'mp_cargas_db_work_sessions_v2',
+  AUDIT_LOGS: 'mp_cargas_db_audit_logs_v2',
 };
 
-const INITIAL_EMPLOYEES: Employee[] = [
-  {
-    id: 'a1111111-1111-4111-8111-111111111111',
-    employee_code: 'MP-0101',
-    full_name: 'João Silva Santos',
-    cpf: '123.456.789-01',
-    department: 'Operações / Transporte',
-    role: 'Motorista Carreteiro',
-    status: 'ATIVO',
-    created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
-    updated_at: new Date().toISOString(),
-    has_face_profile: true,
-  },
-  {
-    id: 'a2222222-2222-4222-8222-222222222222',
-    employee_code: 'MP-0102',
-    full_name: 'Marcos Oliveira Lima',
-    cpf: '234.567.890-12',
-    department: 'Operações / Transporte',
-    role: 'Motorista Truck',
-    status: 'ATIVO',
-    created_at: new Date(Date.now() - 86400000 * 20).toISOString(),
-    updated_at: new Date().toISOString(),
-    has_face_profile: true,
-  },
-  {
-    id: 'a3333333-3333-4333-8333-333333333333',
-    employee_code: 'MP-0201',
-    full_name: 'Ana Paula Ferreira',
-    cpf: '345.678.901-23',
-    department: 'Centro de Distribuição',
-    role: 'Conferente de Cargas',
-    status: 'ATIVO',
-    created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
-    updated_at: new Date().toISOString(),
-    has_face_profile: true,
-  },
-  {
-    id: 'a4444444-4444-4444-8444-444444444444',
-    employee_code: 'MP-0202',
-    full_name: 'Carlos Eduardo Souza',
-    cpf: '456.789.012-34',
-    department: 'Manutenção & Frota',
-    role: 'Mecânico de Linha Pesada',
-    status: 'ATIVO',
-    created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
-    updated_at: new Date().toISOString(),
-    has_face_profile: false,
-  },
-  {
-    id: 'a5555555-5555-4555-8555-555555555555',
-    employee_code: 'MP-0301',
-    full_name: 'Kaian Administrador',
-    cpf: '567.890.123-45',
-    department: 'Gestão Operacional',
-    role: 'Supervisor de Ponto',
-    status: 'ATIVO',
-    created_at: new Date(Date.now() - 86400000 * 45).toISOString(),
-    updated_at: new Date().toISOString(),
-    has_face_profile: true,
-  }
-];
-
-const INITIAL_DEVICES: Device[] = [
-  {
-    id: 'b1111111-1111-4111-8111-111111111111',
-    device_name: 'CEL-001 (Samsung XCover Pro - Frota 12)',
-    device_identifier: 'MP-DEV-SAMS-001',
-    status: 'ATIVO',
-    last_seen: new Date().toISOString(),
-    created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'b2222222-2222-4222-8222-222222222222',
-    device_name: 'CEL-002 (Samsung Galaxy Tab Active - CD)',
-    device_identifier: 'MP-DEV-TAB-002',
-    status: 'ATIVO',
-    last_seen: new Date().toISOString(),
-    created_at: new Date(Date.now() - 86400000 * 8).toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'b3333333-3333-4333-8333-333333333333',
-    device_name: 'CEL-003 (Motorola Defy - Apoio)',
-    device_identifier: 'MP-DEV-MOTO-003',
-    status: 'RESERVA',
-    last_seen: new Date(Date.now() - 86400000 * 2).toISOString(),
-    created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'b4444444-4444-4444-8444-444444444444',
-    device_name: 'CEL-004 (Dispositivo Antigo Danificado)',
-    device_identifier: 'MP-DEV-SAMS-004',
-    status: 'BLOQUEADO',
-    last_seen: new Date(Date.now() - 86400000 * 1).toISOString(),
-    created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
-    updated_at: new Date().toISOString(),
-  }
-];
-
-const INITIAL_FACE_PROFILES: FaceProfile[] = [
-  {
-    id: 'c1111111-1111-4111-8111-111111111111',
-    employee_id: 'a1111111-1111-4111-8111-111111111111',
-    provider_reference: 'mp_biometrics_v1',
-    template_version: 'v1.0',
-    descriptor: [0.045, -0.122, 0.089, 0.231, -0.012, 0.156, -0.078, 0.091, -0.044, 0.115, 0.034, -0.092, 0.187, -0.023, 0.065, 0.143],
-    status: 'ATIVO',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'c2222222-2222-4222-8222-222222222222',
-    employee_id: 'a2222222-2222-4222-8222-222222222222',
-    provider_reference: 'mp_biometrics_v1',
-    template_version: 'v1.0',
-    descriptor: [-0.032, 0.114, -0.095, 0.198, 0.054, -0.133, 0.082, -0.071, 0.063, -0.102, 0.041, 0.088, -0.165, 0.031, -0.058, -0.129],
-    status: 'ATIVO',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'c3333333-3333-4333-8333-333333333333',
-    employee_id: 'a3333333-3333-4333-8333-333333333333',
-    provider_reference: 'mp_biometrics_v1',
-    template_version: 'v1.0',
-    descriptor: [0.078, -0.088, 0.142, -0.105, 0.089, 0.045, -0.112, 0.134, -0.021, 0.095, -0.067, -0.043, 0.122, -0.076, 0.088, 0.094],
-    status: 'ATIVO',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'c5555555-5555-4555-8555-555555555555',
-    employee_id: 'a5555555-5555-4555-8555-555555555555',
-    provider_reference: 'mp_biometrics_v1',
-    template_version: 'v1.0',
-    descriptor: [-0.091, 0.067, -0.054, 0.143, -0.112, 0.087, 0.064, -0.098, 0.103, -0.045, 0.082, -0.061, -0.094, 0.108, -0.042, 0.073],
-    status: 'ATIVO',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }
-];
-
-const now = new Date();
-const todayDateStr = now.toISOString().split('T')[0];
-
-const INITIAL_TIME_RECORDS: TimeRecord[] = [
-  {
-    id: 'd1111111-1111-4111-8111-111111111111',
-    employee_id: 'a1111111-1111-4111-8111-111111111111',
-    device_id: 'b1111111-1111-4111-8111-111111111111',
-    record_type: 'ENTRADA',
-    recorded_at: new Date(now.getTime() - 3.5 * 3600000).toISOString(),
-    latitude: -12.9714,
-    longitude: -38.5014,
-    location_accuracy: 6.4,
-    location_address: 'Salvador - BA (Base Principal)',
-    verification_method: 'FACIAL_LIVENESS',
-    verification_status: 'VALIDADO',
-    verification_score: 0.99,
-    sync_status: 'SINCRONIZADO',
-    idempotency_key: 'seed-idemp-001',
-    is_corrected: false,
-    created_at: new Date(now.getTime() - 3.5 * 3600000).toISOString(),
-  },
-  {
-    id: 'd2222222-2222-4222-8222-222222222222',
-    employee_id: 'a2222222-2222-4222-8222-222222222222',
-    device_id: 'b1111111-1111-4111-8111-111111111111',
-    record_type: 'ENTRADA',
-    recorded_at: new Date(now.getTime() - 4.2 * 3600000).toISOString(),
-    latitude: -12.2664,
-    longitude: -38.9663,
-    location_accuracy: 8.1,
-    location_address: 'Feira de Santana - BA (Filial Cargas)',
-    verification_method: 'FACIAL_LIVENESS',
-    verification_status: 'VALIDADO',
-    verification_score: 0.97,
-    sync_status: 'SINCRONIZADO',
-    idempotency_key: 'seed-idemp-002',
-    is_corrected: false,
-    created_at: new Date(now.getTime() - 4.2 * 3600000).toISOString(),
-  },
-  {
-    id: 'd3333333-3333-4333-8333-333333333333',
-    employee_id: 'a2222222-2222-4222-8222-222222222222',
-    device_id: 'b1111111-1111-4111-8111-111111111111',
-    record_type: 'INICIO_INTERVALO',
-    recorded_at: new Date(now.getTime() - 0.5 * 3600000).toISOString(),
-    latitude: -12.2664,
-    longitude: -38.9663,
-    location_accuracy: 7.5,
-    location_address: 'Feira de Santana - BA (Filial Cargas)',
-    verification_method: 'FACIAL_LIVENESS',
-    verification_status: 'VALIDADO',
-    verification_score: 0.98,
-    sync_status: 'SINCRONIZADO',
-    idempotency_key: 'seed-idemp-003',
-    is_corrected: false,
-    created_at: new Date(now.getTime() - 0.5 * 3600000).toISOString(),
-  },
-  {
-    id: 'd4444444-4444-4444-8444-444444444444',
-    employee_id: 'a3333333-3333-4333-8333-333333333333',
-    device_id: 'b2222222-2222-4222-8222-222222222222',
-    record_type: 'ENTRADA',
-    recorded_at: new Date(now.getTime() - 2.8 * 3600000).toISOString(),
-    latitude: -12.9714,
-    longitude: -38.5014,
-    location_accuracy: 5.2,
-    location_address: 'Salvador - BA (Centro Logístico)',
-    verification_method: 'FACIAL_LIVENESS',
-    verification_status: 'VALIDADO',
-    verification_score: 0.99,
-    sync_status: 'SINCRONIZADO',
-    idempotency_key: 'seed-idemp-004',
-    is_corrected: false,
-    created_at: new Date(now.getTime() - 2.8 * 3600000).toISOString(),
-  }
-];
-
-const INITIAL_WORK_SESSIONS: WorkSession[] = [
-  {
-    id: 'e1111111-1111-4111-8111-111111111111',
-    employee_id: 'a1111111-1111-4111-8111-111111111111',
-    session_date: todayDateStr,
-    started_at: new Date(now.getTime() - 3.5 * 3600000).toISOString(),
-    break_started_at: null,
-    break_ended_at: null,
-    ended_at: null,
-    status: 'EM_JORNADA',
-    created_at: new Date(now.getTime() - 3.5 * 3600000).toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'e2222222-2222-4222-8222-222222222222',
-    employee_id: 'a2222222-2222-4222-8222-222222222222',
-    session_date: todayDateStr,
-    started_at: new Date(now.getTime() - 4.2 * 3600000).toISOString(),
-    break_started_at: new Date(now.getTime() - 0.5 * 3600000).toISOString(),
-    break_ended_at: null,
-    ended_at: null,
-    status: 'EM_INTERVALO',
-    created_at: new Date(now.getTime() - 4.2 * 3600000).toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 'e3333333-3333-4333-8333-333333333333',
-    employee_id: 'a3333333-3333-4333-8333-333333333333',
-    session_date: todayDateStr,
-    started_at: new Date(now.getTime() - 2.8 * 3600000).toISOString(),
-    break_started_at: null,
-    break_ended_at: null,
-    ended_at: null,
-    status: 'EM_JORNADA',
-    created_at: new Date(now.getTime() - 2.8 * 3600000).toISOString(),
-    updated_at: new Date().toISOString(),
-  }
-];
-
-const INITIAL_AUDIT_LOGS: AuditLog[] = [
-  {
-    id: 'f1111111-1111-4111-8111-111111111111',
-    user_id: 'admin-kaian',
-    employee_id: 'a1111111-1111-4111-8111-111111111111',
-    action: 'CADASTRO_FUNCIONARIO',
-    device_id: 'b1111111-1111-4111-8111-111111111111',
-    metadata: { origem: 'Painel Admin', cargo: 'Motorista Carreteiro' },
-    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-  },
-  {
-    id: 'f2222222-2222-4222-8222-222222222222',
-    user_id: 'admin-kaian',
-    employee_id: 'a1111111-1111-4111-8111-111111111111',
-    action: 'CADASTRO_BIOMETRIA_FACIAL',
-    device_id: 'b1111111-1111-4111-8111-111111111111',
-    metadata: { template_version: 'v1.0', qualidade: '99.2%' },
-    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-  },
-  {
-    id: 'f3333333-3333-4333-8333-333333333333',
-    user_id: 'admin-kaian',
-    employee_id: null,
-    action: 'BLOQUEIO_DISPOSITIVO',
-    device_id: 'b4444444-4444-4444-8444-444444444444',
-    metadata: { motivo: 'Aparelho celular antigo danificado na rota' },
-    created_at: new Date(Date.now() - 86400000 * 1).toISOString(),
-  }
-];
+// Começa com arrays 100% vazios para o administrador cadastrar os funcionários reais da MP CARGAS
+const INITIAL_EMPLOYEES: Employee[] = [];
+const INITIAL_DEVICES: Device[] = [];
+const INITIAL_FACE_PROFILES: FaceProfile[] = [];
+const INITIAL_TIME_RECORDS: TimeRecord[] = [];
+const INITIAL_WORK_SESSIONS: WorkSession[] = [];
+const INITIAL_AUDIT_LOGS: AuditLog[] = [];
 
 function getStored<T>(key: string, fallback: T[]): T[] {
   const data = localStorage.getItem(key);
@@ -340,6 +56,11 @@ function setStored<T>(key: string, data: T[]): void {
 }
 
 export const dbService = {
+  // Limpa o banco local caso deseje reiniciar do zero
+  clearAllData() {
+    Object.values(STORAGE_KEYS).forEach((k) => localStorage.removeItem(k));
+  },
+
   async getEmployees(): Promise<Employee[]> {
     if (isSupabaseConfigured && supabase) {
       const { data, error } = await supabase.from('employees').select('*').order('full_name');
@@ -413,6 +134,17 @@ export const dbService = {
     setStored(STORAGE_KEYS.EMPLOYEES, emps);
     await this.logAudit('CADASTRO_FUNCIONARIO', { id: newEmp.id, nome: newEmp.full_name }, newEmp.id);
     return newEmp;
+  },
+
+  async deleteEmployee(id: string): Promise<boolean> {
+    if (isSupabaseConfigured && supabase) {
+      await supabase.from('employees').delete().eq('id', id);
+    }
+    const emps = getStored<Employee>(STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES);
+    const filtered = emps.filter((e) => e.id !== id);
+    setStored(STORAGE_KEYS.EMPLOYEES, filtered);
+    await this.logAudit('EXCLUSAO_FUNCIONARIO', { id }, id);
+    return true;
   },
 
   async toggleEmployeeStatus(id: string): Promise<Employee | null> {

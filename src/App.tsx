@@ -79,6 +79,7 @@ export function App() {
             currentDevice={currentDevice}
             isOnline={networkStatus.isOnline}
             pendingCount={networkStatus.pendingCount}
+            onGoToAdmin={() => setCurrentView('admin')}
           />
         ) : (
           <AdminLayout onBackToEmployee={() => setCurrentView('employee')} />

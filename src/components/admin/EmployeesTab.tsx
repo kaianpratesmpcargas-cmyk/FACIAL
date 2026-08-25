@@ -9,7 +9,8 @@ import {
   CheckCircle2, 
   XCircle, 
   X, 
-  Save 
+  Save,
+  Trash2
 } from 'lucide-react';
 import type { Employee } from '../../types';
 import { dbService } from '../../lib/supabase';
@@ -75,7 +76,7 @@ export const EmployeesTab: React.FC = () => {
     if (!fullName || !cpf) return;
 
     try {
-      await dbService.saveEmployee({
+      const saved = await dbService.saveEmployee({
         id: editingEmployee?.id,
         full_name: fullName,
         cpf,
@@ -86,7 +87,12 @@ export const EmployeesTab: React.FC = () => {
       });
 
       setIsFormModalOpen(false);
-      loadEmployees();
+      await loadEmployees();
+
+      // Se for novo cadastro sem biometria, pergunta se deseja abrir a câmera para cadastrar a face imediatamente
+      if (!editingEmployee) {
+        setEnrollingEmployee(saved);
+      }
     } catch (err) {
       console.error('Erro ao salvar funcionário:', err);
     }
@@ -95,6 +101,13 @@ export const EmployeesTab: React.FC = () => {
   const handleToggleStatus = async (emp: Employee) => {
     if (confirm(`Deseja alterar o status de ${emp.full_name} para ${emp.status === 'ATIVO' ? 'INATIVO' : 'ATIVO'}?`)) {
       await dbService.toggleEmployeeStatus(emp.id);
+      loadEmployees();
+    }
+  };
+
+  const handleDeleteEmployee = async (emp: Employee) => {
+    if (confirm(`Atenção: Deseja realmente excluir o colaborador ${emp.full_name} (${emp.employee_code})? Esta ação não pode ser desfeita.`)) {
+      await dbService.deleteEmployee(emp.id);
       loadEmployees();
     }
   };
@@ -206,7 +219,20 @@ export const EmployeesTab: React.FC = () => {
               {filteredEmployees.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-zinc-500 font-medium">
-                    Nenhum colaborador encontrado com os filtros selecionados.
+                    {employees.length === 0 ? (
+                      <div className="space-y-3">
+                        <p className="text-zinc-400 font-bold">Nenhum funcionário cadastrado no sistema.</p>
+                        <button
+                          onClick={handleOpenCreate}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#FFD100] text-black font-extrabold text-xs cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Cadastrar Primeiro Colaborador</span>
+                        </button>
+                      </div>
+                    ) : (
+                      'Nenhum colaborador encontrado com os filtros selecionados.'
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -216,7 +242,7 @@ export const EmployeesTab: React.FC = () => {
                     <td className="py-4 px-5">
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-full bg-[#242424] border border-[#333333] flex items-center justify-center text-[#FFD100] font-bold shrink-0">
-                          {emp.full_name.charAt(0)}
+                          {emp.full_name.charAt(0).toUpperCase()}
                         </div>
                         <div>
                           <p className="font-extrabold text-white text-sm">{emp.full_name}</p>
@@ -237,15 +263,23 @@ export const EmployeesTab: React.FC = () => {
 
                     <td className="py-4 px-4 text-center">
                       {emp.has_face_profile ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-500/30">
+                        <button
+                          onClick={() => setEnrollingEmployee(emp)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-500/30 cursor-pointer"
+                          title="Clique para recadastrar biometria"
+                        >
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          Cadastrado
-                        </span>
+                          <span>Cadastrado</span>
+                        </button>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-950/80 text-amber-400 border border-amber-500/30">
+                        <button
+                          onClick={() => setEnrollingEmployee(emp)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-950/80 hover:bg-[#FFD100] hover:text-black text-amber-400 border border-amber-500/30 cursor-pointer transition-colors"
+                          title="Clique para cadastrar biometria facial agora"
+                        >
                           <XCircle className="w-3.5 h-3.5" />
-                          Pendente
-                        </span>
+                          <span>Cadastrar Face</span>
+                        </button>
                       )}
                     </td>
 
@@ -258,7 +292,7 @@ export const EmployeesTab: React.FC = () => {
                         <button
                           onClick={() => setEnrollingEmployee(emp)}
                           title="Cadastrar / Recadastrar Biometria Facial"
-                          className="p-2 rounded-xl bg-[#252525] hover:bg-[#FFD100] text-zinc-300 hover:text-black transition-colors"
+                          className="p-2 rounded-xl bg-[#252525] hover:bg-[#FFD100] text-zinc-300 hover:text-black transition-colors cursor-pointer"
                         >
                           <Scan className="w-4 h-4" />
                         </button>
@@ -266,7 +300,7 @@ export const EmployeesTab: React.FC = () => {
                         <button
                           onClick={() => handleOpenEdit(emp)}
                           title="Editar Dados Pessoais"
-                          className="p-2 rounded-xl bg-[#252525] hover:bg-[#333333] text-zinc-300 transition-colors"
+                          className="p-2 rounded-xl bg-[#252525] hover:bg-[#333333] text-zinc-300 transition-colors cursor-pointer"
                         >
                           <Edit3 className="w-4 h-4" />
                         </button>
@@ -274,13 +308,21 @@ export const EmployeesTab: React.FC = () => {
                         <button
                           onClick={() => handleToggleStatus(emp)}
                           title={emp.status === 'ATIVO' ? 'Desativar Funcionário' : 'Ativar Funcionário'}
-                          className={`p-2 rounded-xl transition-colors ${
+                          className={`p-2 rounded-xl transition-colors cursor-pointer ${
                             emp.status === 'ATIVO'
                               ? 'bg-[#252525] hover:bg-red-950 text-zinc-400 hover:text-red-400'
                               : 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400'
                           }`}
                         >
                           <Power className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          onClick={() => handleDeleteEmployee(emp)}
+                          title="Excluir Colaborador"
+                          className="p-2 rounded-xl bg-[#252525] hover:bg-red-950 text-zinc-400 hover:text-red-400 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
@@ -303,7 +345,7 @@ export const EmployeesTab: React.FC = () => {
               </h3>
               <button
                 onClick={() => setIsFormModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-[#242424] hover:bg-[#333333] text-zinc-300 flex items-center justify-center"
+                className="w-8 h-8 rounded-full bg-[#242424] hover:bg-[#333333] text-zinc-300 flex items-center justify-center cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -391,16 +433,16 @@ export const EmployeesTab: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsFormModalOpen(false)}
-                  className="flex-1 py-3 rounded-xl bg-[#242424] hover:bg-[#303030] text-zinc-300 font-bold text-xs"
+                  className="flex-1 py-3 rounded-xl bg-[#242424] hover:bg-[#303030] text-zinc-300 font-bold text-xs cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-3 rounded-xl bg-[#FFD100] hover:bg-[#E6BC00] text-black font-extrabold text-xs flex items-center justify-center gap-2"
+                  className="flex-1 py-3 rounded-xl bg-[#FFD100] hover:bg-[#E6BC00] text-black font-extrabold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-[#FFD100]/20"
                 >
                   <Save className="w-4 h-4" />
-                  <span>Salvar Dados</span>
+                  <span>Salvar e Cadastrar Biometria</span>
                 </button>
               </div>
             </form>
