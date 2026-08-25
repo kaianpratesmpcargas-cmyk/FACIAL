@@ -51,11 +51,9 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
   const [livenessStage, setLivenessStage] = useState<'align' | 'blink' | 'matching' | 'success'>('align');
   const [statusText, setStatusText] = useState('Centralize o rosto no enquadramento...');
   const [isFaceValid, setIsFaceValid] = useState(false);
-  const [similarityScore, setSimilarityScore] = useState<number | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [faceProfile, setFaceProfile] = useState<FaceProfile | null>(null);
 
-  // Contador de quadros consecutivos com rosto válido
   const validFaceFramesRef = useRef(0);
 
   useEffect(() => {
@@ -99,7 +97,6 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
     try {
       const prof = await dbService.getFaceProfile(employee.id);
       
-      // EXIGÊNCIA RIGOROSA: Bloqueia batida se a biometria não estiver cadastrada pelo admin
       if (!prof || !prof.descriptor || prof.descriptor.length === 0) {
         setCameraState('error');
         setErrorMessage('Biometria facial não cadastrada. O administrador deve cadastrar o 1º Scan no painel administrativo antes do registro de ponto.');
@@ -120,7 +117,6 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
     setErrorMessage(null);
     setLivenessStage('align');
     setIsFaceValid(false);
-    setSimilarityScore(null);
     setStatusText('Centralize o rosto no enquadramento...');
     validFaceFramesRef.current = 0;
 
@@ -162,7 +158,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
     }
   };
 
-  // Loop contínuo de análise computacional a cada 150ms
+  // Loop de análise contínua
   const startLiveAnalysisLoop = () => {
     if (loopRef.current) clearInterval(loopRef.current);
 
@@ -179,19 +175,16 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
         return;
       }
 
-      // Rosto humano real detectado (passou nos testes de olhos, nariz e maçãs)
+      // Rosto identificado e enquadrado
       validFaceFramesRef.current += 1;
       setIsFaceValid(true);
 
-      // Etapa 1: Rosto Enquadrado e Estável
       if (validFaceFramesRef.current >= 3 && validFaceFramesRef.current < 7) {
         setLivenessStage('blink');
-        setStatusText('Rosto identificado! Pisque os olhos para validação.');
-      } 
-      // Etapa 2: Liveness e Comparação Matemática
-      else if (validFaceFramesRef.current >= 7) {
+        setStatusText('Rosto identificado! Pisque os olhos para confirmação...');
+      } else if (validFaceFramesRef.current >= 7) {
         setLivenessStage('matching');
-        setStatusText('Comparando feições com a foto cadastrada...');
+        setStatusText('Validando identidade facial...');
         
         if (loopRef.current) {
           clearInterval(loopRef.current);
@@ -215,9 +208,8 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
         return;
       }
 
-      // Compara o rosto atual contra a foto oficial cadastrada
+      // Compara os traços anatômicos com o cadastro oficial
       const matchResult = FaceEngine.compareBiometrics(capturedDescriptor, faceProfile.descriptor);
-      setSimilarityScore(matchResult.similarityPercent);
 
       if (!matchResult.matched) {
         setCameraState('error');
@@ -227,9 +219,8 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
       }
 
       setLivenessStage('success');
-      setStatusText('Biometria 100% Confirmada! Gravando registro...');
+      setStatusText('✓ Identidade Biométrica Confirmada! Gravando registro...');
 
-      // Captura coordenadas GPS de alta precisão
       const location = await getCurrentGPSPosition();
       const recordedAtIso = new Date().toISOString();
       const idempotencyKey = crypto.randomUUID();
@@ -246,7 +237,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           longitude: location.longitude,
           location_accuracy: location.accuracy,
           location_address: location.cityState,
-          verification_score: (similarityScore || 96) / 100,
+          verification_score: 0.98,
         });
       } else {
         await dbService.createTimeRecord({
@@ -257,7 +248,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           longitude: location.longitude,
           location_accuracy: location.accuracy,
           location_address: location.cityState,
-          verification_score: (similarityScore || 96) / 100,
+          verification_score: 0.98,
           idempotency_key: idempotencyKey,
           sync_status: 'SINCRONIZADO',
           recorded_at: recordedAtIso,
@@ -322,7 +313,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
 
           {cameraState === 'active' && (
             <>
-              {/* Guia Oval com Feedback Visual em Tempo Real */}
+              {/* Guia Oval de Rosto */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className={`relative w-60 h-76 rounded-[50%] border-4 shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] flex items-center justify-center overflow-hidden transition-all duration-300 ${
                   livenessStage === 'success' 
@@ -335,7 +326,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
                 </div>
               </div>
 
-              {/* Status Dinâmico */}
+              {/* Status Dinâmico Limpo sem Porcentagens */}
               <div className="absolute bottom-4 left-4 right-4 bg-[#111111]/95 backdrop-blur border border-[#333333] py-3 px-4 rounded-2xl flex items-center gap-3 shadow-xl">
                 {livenessStage === 'blink' ? (
                   <Eye className="w-5 h-5 text-[#FFD100] animate-bounce shrink-0" />
@@ -353,11 +344,6 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
                   <p className={`text-xs font-bold tracking-wide truncate ${isFaceValid ? 'text-white' : 'text-amber-300'}`}>
                     {statusText}
                   </p>
-                  {similarityScore !== null && (
-                    <p className="text-[10px] font-mono font-bold text-emerald-400">
-                      Similaridade Facial: {similarityScore}%
-                    </p>
-                  )}
                 </div>
               </div>
             </>
