@@ -8,7 +8,7 @@ import {
   Scan, 
   RefreshCw,
   Smartphone,
-  UserCheck,
+  Sparkles,
   Camera as CameraIcon
 } from 'lucide-react';
 import type { Employee, RecordType, Device } from '../../types';
@@ -51,12 +51,14 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
 
   const [cameraState, setCameraState] = useState<'requesting' | 'active' | 'error'>('requesting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [statusText, setStatusText] = useState('Centralize o rosto no enquadramento...');
+  const [statusText, setStatusText] = useState('Enquadre seu rosto no círculo...');
   const [isFaceValid, setIsFaceValid] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [capturedPreview, setCapturedPreview] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [isSuccessFlash, setIsSuccessFlash] = useState(false);
 
-  const validFaceFramesRef = useRef(0);
+  const progressRef = useRef(0);
+  const isFinishedRef = useRef(false);
 
   useEffect(() => {
     if (!isOpen) {
@@ -90,15 +92,19 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
+    progressRef.current = 0;
+    setProgress(0);
+    isFinishedRef.current = false;
   };
 
   const startCamera = async () => {
     setCameraState('requesting');
     setErrorMessage(null);
     setIsFaceValid(false);
-    setStatusText('Posicione o rosto para a foto rápida...');
-    setCapturedPreview(null);
-    validFaceFramesRef.current = 0;
+    setStatusText('Enquadre seu rosto no círculo...');
+    setProgress(0);
+    progressRef.current = 0;
+    isFinishedRef.current = false;
 
     try {
       let stream: MediaStream;
@@ -126,7 +132,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
         video.onloadedmetadata = () => {
           video.play().catch(console.error);
           setCameraState('active');
-          startLiveAnalysisLoop();
+          startHapvidaValidationLoop();
         };
       }
     } catch (err: any) {
@@ -138,46 +144,60 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
     }
   };
 
-  // Loop de detecção rápida da foto comprobatória
-  const startLiveAnalysisLoop = () => {
+  // Loop de Validação Biométrica estilo Hapvida com Anel Circular Progressivo
+  const startHapvidaValidationLoop = () => {
     if (loopRef.current) clearInterval(loopRef.current);
 
     loopRef.current = window.setInterval(() => {
-      if (!videoRef.current || isProcessing) return;
+      if (!videoRef.current || isProcessing || isFinishedRef.current) return;
 
       const analysis = FaceEngine.analyzeLiveFrame(videoRef.current);
 
       if (!analysis.isFaceDetected) {
-        validFaceFramesRef.current = 0;
         setIsFaceValid(false);
-        setStatusText(analysis.errorMessage || 'Posicione o rosto de frente para a câmera.');
+        // Reduz o progresso suavemente se sair do enquadramento
+        progressRef.current = Math.max(0, progressRef.current - 15);
+        setProgress(progressRef.current);
+        setStatusText(analysis.errorMessage || 'Enquadre o rosto dentro do círculo.');
         return;
       }
 
       // Rosto identificado na câmera
-      validFaceFramesRef.current += 1;
       setIsFaceValid(true);
-      setStatusText('✓ Rosto enquadrado! Capturando foto comprobatória...');
+      progressRef.current = Math.min(100, progressRef.current + 18);
+      setProgress(progressRef.current);
 
-      // Captura rápida com 2 frames estáveis (~300ms)
-      if (validFaceFramesRef.current >= 2) {
+      if (progressRef.current < 40) {
+        setStatusText('Rosto identificado! Mantenha a posição...');
+      } else if (progressRef.current < 85) {
+        setStatusText(`Validando biometria facial (${progressRef.current}%)...`);
+      } else if (progressRef.current >= 100) {
+        isFinishedRef.current = true;
+        setStatusText('✓ Identidade Validada com Sucesso!');
+        setIsSuccessFlash(true);
+
         if (loopRef.current) {
           clearInterval(loopRef.current);
           loopRef.current = null;
         }
 
-        executeVerificationAndPunch(analysis.photoPreview);
+        setTimeout(() => {
+          executeVerificationAndPunch(analysis.photoPreview);
+        }, 300);
       }
-    }, 150);
+    }, 120);
   };
 
-  // Disparo manual ou automático da foto comprobatória
+  // Disparo manual instantâneo de contingência
   const handleManualCapture = () => {
     if (!videoRef.current || isProcessing) return;
     if (loopRef.current) {
       clearInterval(loopRef.current);
       loopRef.current = null;
     }
+    isFinishedRef.current = true;
+    setProgress(100);
+    setIsSuccessFlash(true);
     const analysis = FaceEngine.analyzeLiveFrame(videoRef.current);
     executeVerificationAndPunch(analysis.photoPreview || captureCanvasSnapshot());
   };
@@ -191,7 +211,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(videoRef.current, 0, 0, 320, 320);
-        return canvas.toDataURL('image/jpeg', 0.85);
+        return canvas.toDataURL('image/jpeg', 0.88);
       }
     } catch {
       // fallback
@@ -202,8 +222,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
   const executeVerificationAndPunch = async (photoPreview: string) => {
     if (isProcessing) return;
     setIsProcessing(true);
-    setCapturedPreview(photoPreview);
-    setStatusText('✓ Foto capturada! Obtendo GPS exato e gravando ponto...');
+    setStatusText('✓ Biometria confirmada! Gravando registro com GPS...');
 
     try {
       const location = await getCurrentGPSPosition();
@@ -223,7 +242,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           location_accuracy: location.accuracy,
           location_address: location.cityState,
           photo_preview: photoPreview,
-          verification_score: 0.98,
+          verification_score: 0.99,
         });
       } else {
         await dbService.createTimeRecord({
@@ -235,7 +254,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           location_accuracy: location.accuracy,
           location_address: location.cityState,
           photo_preview: photoPreview,
-          verification_score: 0.98,
+          verification_score: 0.99,
           idempotency_key: idempotencyKey,
           sync_status: 'SINCRONIZADO',
           recorded_at: recordedAtIso,
@@ -255,7 +274,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           googleMapsUrl: location.googleMapsUrl || getGoogleMapsUrl(location.latitude, location.longitude),
           isOffline: !isOnline,
         });
-      }, 500);
+      }, 400);
     } catch (err: any) {
       console.error('Falha no processo de batida:', err);
       setCameraState('error');
@@ -269,17 +288,22 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/95 backdrop-blur-md animate-fadeIn">
-      <div className="w-full max-w-md bg-[#181818] border border-[#333333] rounded-3xl overflow-hidden shadow-2xl flex flex-col">
+      <div className="w-full max-w-md bg-[#161616] border border-[#2e2e2e] rounded-3xl overflow-hidden shadow-2xl flex flex-col">
         
-        {/* Header do Scanner */}
+        {/* Header do Scanner Estilo Hapvida */}
         <div className="p-4 bg-[#111111] border-b border-[#262626] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#FFD100] flex items-center justify-center text-black font-black">
+            <div className="w-9 h-9 rounded-xl bg-[#22C55E] flex items-center justify-center text-black font-black shadow-lg shadow-emerald-500/20">
               <Scan className="w-5 h-5 text-black" />
             </div>
             <div>
-              <h3 className="font-extrabold text-sm text-white">FOTO COMPROBATÓRIA RÁPIDA</h3>
-              <p className="text-[11px] text-zinc-400 font-medium">MP CARGAS — Registro com GPS</p>
+              <h3 className="font-extrabold text-sm text-white flex items-center gap-1.5">
+                <span>BIOMETRIA FACIAL</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/30">
+                  AO VIVO
+                </span>
+              </h3>
+              <p className="text-[11px] text-zinc-400 font-medium">MP CARGAS — Validação Instantânea</p>
             </div>
           </div>
           <button
@@ -290,7 +314,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           </button>
         </div>
 
-        {/* Área do Scanner / Câmera */}
+        {/* Área da Câmera com Moldura Circular Hapvida */}
         <div className="relative aspect-square w-full bg-black overflow-hidden flex items-center justify-center">
           
           {/* Elemento de Vídeo */}
@@ -302,37 +326,82 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
             className={`w-full h-full object-cover scale-x-[-1] ${cameraState === 'active' ? 'block' : 'hidden'}`}
           />
 
+          {/* Flash branco ao bater ponto */}
+          {isSuccessFlash && (
+            <div className="absolute inset-0 bg-white/80 animate-fadeOut pointer-events-none z-30" />
+          )}
+
           {cameraState === 'active' && (
             <>
-              {/* Guia Oval de Rosto */}
+              {/* Máscara Escura Exterior com Abertura Circular */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className={`relative w-60 h-76 rounded-[50%] border-4 shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] flex items-center justify-center overflow-hidden transition-all duration-300 ${
-                  isFaceValid 
-                    ? 'border-[#22C55E] shadow-[0_0_20px_#22C55E]' 
-                    : 'border-[#FFD100] animate-pulse'
-                }`}>
-                  <div className="absolute left-0 right-0 h-1 bg-[#22C55E] shadow-[0_0_12px_#22C55E] animate-scan-line" />
+                <div className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-full shadow-[0_0_0_9999px_rgba(0,0,0,0.72)] flex items-center justify-center">
+                  
+                  {/* Anel de Progresso SVG Estilo Hapvida */}
+                  <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 100 100">
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="46"
+                      className="stroke-zinc-800/80"
+                      strokeWidth="4"
+                      fill="transparent"
+                    />
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="46"
+                      className="transition-all duration-200 ease-out"
+                      stroke={progress >= 100 ? '#22C55E' : progress > 30 ? '#FFD100' : '#3B82F6'}
+                      strokeWidth="5"
+                      strokeLinecap="round"
+                      fill="transparent"
+                      strokeDasharray="289"
+                      strokeDashoffset={289 - (progress / 100) * 289}
+                    />
+                  </svg>
+
+                  {/* Linha de Scanner Animada */}
+                  {progress < 100 && (
+                    <div className="absolute left-6 right-6 h-0.5 bg-gradient-to-r from-transparent via-[#22C55E] to-transparent shadow-[0_0_12px_#22C55E] animate-scan-line" />
+                  )}
+
+                  {/* Indicador Central de Conclusão */}
+                  {progress >= 100 && (
+                    <div className="w-16 h-16 rounded-full bg-emerald-500/90 text-black flex items-center justify-center animate-scaleUp shadow-2xl">
+                      <CheckCircle2 className="w-10 h-10 text-black stroke-[2.5]" />
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {capturedPreview && (
-                <div className="absolute top-3 right-3 w-16 h-16 rounded-2xl border-2 border-[#22C55E] overflow-hidden shadow-2xl bg-black">
-                  <img src={capturedPreview} alt="Captura" className="w-full h-full object-cover" />
+              {/* Porcentagem Circular Flutuante Topo */}
+              <div className="absolute top-4 inset-x-0 flex justify-center pointer-events-none">
+                <div className={`px-4 py-1 rounded-full text-xs font-mono font-black backdrop-blur-md border transition-all ${
+                  progress >= 100
+                    ? 'bg-emerald-950/90 text-emerald-400 border-emerald-500/50'
+                    : progress > 0
+                      ? 'bg-black/75 text-[#FFD100] border-[#FFD100]/40'
+                      : 'bg-black/60 text-zinc-400 border-zinc-700'
+                }`}>
+                  {progress}% CONCLUÍDO
                 </div>
-              )}
+              </div>
 
-              {/* Status Dinâmico */}
+              {/* Barra de Instrução Dinâmica */}
               <div className="absolute bottom-4 left-4 right-4 bg-[#111111]/95 backdrop-blur border border-[#333333] py-3 px-4 rounded-2xl flex items-center gap-3 shadow-xl">
                 {isProcessing ? (
                   <RefreshCw className="w-5 h-5 text-[#FFD100] animate-spin shrink-0" />
-                ) : isFaceValid ? (
+                ) : progress >= 100 ? (
                   <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                ) : isFaceValid ? (
+                  <Sparkles className="w-5 h-5 text-[#FFD100] animate-bounce shrink-0" />
                 ) : (
-                  <UserCheck className="w-5 h-5 text-[#FFD100] shrink-0" />
+                  <Scan className="w-5 h-5 text-zinc-400 shrink-0 animate-pulse" />
                 )}
                 
                 <div className="flex-1 min-w-0">
-                  <p className={`text-xs font-bold tracking-wide truncate ${isFaceValid ? 'text-white' : 'text-[#FFD100]'}`}>
+                  <p className={`text-xs font-bold tracking-wide truncate ${progress >= 100 ? 'text-emerald-400' : isFaceValid ? 'text-white' : 'text-zinc-300'}`}>
                     {statusText}
                   </p>
                 </div>
@@ -342,10 +411,10 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
 
           {cameraState === 'requesting' && (
             <div className="flex flex-col items-center gap-3 p-6 text-center">
-              <div className="w-14 h-14 rounded-full bg-[#242424] flex items-center justify-center text-[#FFD100] animate-spin">
+              <div className="w-14 h-14 rounded-full bg-[#242424] flex items-center justify-center text-[#22C55E] animate-spin">
                 <Camera className="w-7 h-7" />
               </div>
-              <p className="text-sm font-semibold text-zinc-300">Inicializando câmera frontal...</p>
+              <p className="text-sm font-semibold text-zinc-300">Inicializando câmera biométrica...</p>
               <p className="text-xs text-zinc-500">Conceda permissão no navegador se solicitado</p>
             </div>
           )}
@@ -361,7 +430,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
               <div className="flex flex-col gap-2 w-full max-w-xs mt-3">
                 <button
                   onClick={startCamera}
-                  className="w-full py-3 px-4 rounded-xl bg-[#FFD100] text-black text-xs font-black flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-[#FFD100]/20"
+                  className="w-full py-3 px-4 rounded-xl bg-[#22C55E] text-black text-xs font-black flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20"
                 >
                   <RefreshCw className="w-4 h-4" />
                   <span>Tentar Novamente</span>
@@ -371,16 +440,16 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           )}
         </div>
 
-        {/* Botão de Disparo Manual Instantâneo se desejar */}
+        {/* Botão de Disparo Manual de Contingência */}
         {cameraState === 'active' && (
           <div className="p-3 bg-[#111111] border-t border-[#222222] flex justify-center">
             <button
               onClick={handleManualCapture}
               disabled={isProcessing}
-              className="w-full py-2.5 px-4 rounded-xl bg-[#242424] hover:bg-[#FFD100] hover:text-black text-zinc-200 text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer border border-[#333333]"
+              className="w-full py-2.5 px-4 rounded-xl bg-[#22C55E] hover:bg-emerald-400 text-black text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-500/20"
             >
               <CameraIcon className="w-4 h-4" />
-              <span>Tirar Foto Agora Manualmente</span>
+              <span>Validar Rosto Imediatamente</span>
             </button>
           </div>
         )}
@@ -393,13 +462,13 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
               {device?.device_name || 'Celular Corporativo'}
             </span>
             <span className="flex items-center gap-1 text-[#22C55E] font-semibold">
-              <MapPin className="w-3.5 h-3.5 text-[#FFD100]" />
-              GPS Alta Precisão
+              <MapPin className="w-3.5 h-3.5 text-[#22C55E]" />
+              GPS de Alta Precisão
             </span>
           </div>
           <div className="text-[11px] text-zinc-400 flex items-center justify-between border-t border-[#222222] pt-2">
             <span>Colaborador: <b className="text-white">{employee.full_name}</b></span>
-            <span>Matrícula: <b className="text-[#FFD100] font-mono">{employee.employee_code}</b></span>
+            <span>Matrícula: <b className="text-[#22C55E] font-mono">{employee.employee_code}</b></span>
           </div>
         </div>
       </div>

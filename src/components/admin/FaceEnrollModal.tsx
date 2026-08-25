@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, X, CheckCircle, ShieldCheck, AlertCircle, Scan, Lock, AlertTriangle } from 'lucide-react';
+import { Camera, X, CheckCircle, ShieldCheck, AlertCircle, Scan, Lock, Sparkles } from 'lucide-react';
 import type { Employee } from '../../types';
 import { FaceEngine } from '../../lib/faceEngine';
 import { dbService } from '../../lib/supabase';
@@ -24,10 +24,14 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
   const [cameraState, setCameraState] = useState<'requesting' | 'active' | 'error'>('requesting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isFaceDetected, setIsFaceDetected] = useState(false);
-  const [liveFeedback, setLiveFeedback] = useState('Centralize o rosto no enquadramento...');
+  const [liveFeedback, setLiveFeedback] = useState('Enquadre seu rosto no círculo...');
   const [isCapturing, setIsCapturing] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [capturedPreview, setCapturedPreview] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+
+  const progressRef = useRef(0);
+  const isEnrolledRef = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -53,6 +57,9 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
+    progressRef.current = 0;
+    setProgress(0);
+    isEnrolledRef.current = false;
   };
 
   const startCamera = async () => {
@@ -61,7 +68,10 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
     setSuccessMessage(null);
     setCapturedPreview(null);
     setIsFaceDetected(false);
-    setLiveFeedback('Centralize o rosto no enquadramento...');
+    setProgress(0);
+    progressRef.current = 0;
+    isEnrolledRef.current = false;
+    setLiveFeedback('Enquadre seu rosto no círculo...');
 
     try {
       let stream: MediaStream;
@@ -102,43 +112,50 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
     if (loopRef.current) clearInterval(loopRef.current);
 
     loopRef.current = window.setInterval(() => {
-      if (!videoRef.current || isCapturing) return;
+      if (!videoRef.current || isCapturing || isEnrolledRef.current) return;
 
       const analysis = FaceEngine.analyzeLiveFrame(videoRef.current);
       setIsFaceDetected(analysis.isFaceDetected);
 
       if (!analysis.isFaceDetected) {
-        setLiveFeedback(analysis.errorMessage || 'Enquadre o rosto de frente para a câmera.');
+        progressRef.current = Math.max(0, progressRef.current - 15);
+        setProgress(progressRef.current);
+        setLiveFeedback(analysis.errorMessage || 'Enquadre o rosto no círculo.');
       } else {
-        setLiveFeedback('✓ Rosto identificado! Clique no botão para cadastrar.');
+        progressRef.current = Math.min(100, progressRef.current + 20);
+        setProgress(progressRef.current);
+
+        if (progressRef.current < 50) {
+          setLiveFeedback('Rosto detectado! Mantenha a posição...');
+        } else if (progressRef.current < 90) {
+          setLiveFeedback(`Escaneando biometria (${progressRef.current}%)...`);
+        } else if (progressRef.current >= 100) {
+          isEnrolledRef.current = true;
+          setLiveFeedback('✓ Rosto validado! Gravando biometria...');
+          if (loopRef.current) {
+            clearInterval(loopRef.current);
+            loopRef.current = null;
+          }
+          handleAutoEnroll(analysis);
+        }
       }
-    }, 150);
+    }, 120);
   };
 
-  const handleCaptureAndEnroll = async () => {
-    if (isCapturing || !videoRef.current) return;
+  const handleAutoEnroll = async (analysis: any) => {
+    if (isCapturing) return;
     setIsCapturing(true);
-    setErrorMessage(null);
 
     try {
-      const analysis = FaceEngine.analyzeLiveFrame(videoRef.current);
-
-      if (!analysis.isFaceDetected) {
-        setErrorMessage(analysis.errorMessage || 'Nenhum rosto válido detectado. Posicione-se em frente à câmera.');
-        setIsCapturing(false);
-        return;
-      }
-
       setCapturedPreview(analysis.photoPreview);
       await dbService.saveFaceProfile(employee.id, analysis.descriptor, analysis.photoPreview);
-
       onEnrolled();
       setSuccessMessage(`Biometria cadastrada com sucesso para ${employee.full_name}!`);
       
       setTimeout(() => {
         cleanup();
         onClose();
-      }, 1000);
+      }, 900);
     } catch (err: any) {
       setErrorMessage(err?.message || 'Erro ao gravar biometria.');
     } finally {
@@ -146,20 +163,32 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
     }
   };
 
+  const handleManualCaptureAndEnroll = async () => {
+    if (isCapturing || !videoRef.current) return;
+    if (loopRef.current) {
+      clearInterval(loopRef.current);
+      loopRef.current = null;
+    }
+    isEnrolledRef.current = true;
+    setProgress(100);
+    const analysis = FaceEngine.analyzeLiveFrame(videoRef.current);
+    handleAutoEnroll(analysis);
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fadeIn">
-      <div className="w-full max-w-md bg-[#181818] border border-[#333333] rounded-3xl overflow-hidden shadow-2xl flex flex-col">
+      <div className="w-full max-w-md bg-[#161616] border border-[#2e2e2e] rounded-3xl overflow-hidden shadow-2xl flex flex-col">
         
         {/* Header */}
         <div className="p-4 sm:p-5 bg-[#111111] border-b border-[#262626] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#FFD100] flex items-center justify-center text-black font-black">
+            <div className="w-10 h-10 rounded-xl bg-[#22C55E] flex items-center justify-center text-black font-black shadow-lg shadow-emerald-500/20">
               <Scan className="w-6 h-6 text-black" />
             </div>
             <div>
-              <h3 className="font-extrabold text-sm sm:text-base text-white">CADASTRO DE BIOMETRIA FACIAL</h3>
+              <h3 className="font-extrabold text-sm sm:text-base text-white">CADASTRO BIOMÉTRICO</h3>
               <p className="text-xs text-zinc-400">{employee.full_name} ({employee.employee_code})</p>
             </div>
           </div>
@@ -171,7 +200,7 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
           </button>
         </div>
 
-        {/* Área da Câmera com Enquadramento */}
+        {/* Área da Câmera com Scanner Circular */}
         <div className="relative aspect-square w-full bg-black overflow-hidden flex items-center justify-center">
           
           <video
@@ -184,11 +213,43 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
 
           {cameraState === 'active' && (
             <>
+              {/* Máscara Escura com Abertura Circular */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className={`w-60 h-72 rounded-[50%] border-4 shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] flex items-center justify-center relative overflow-hidden transition-colors ${
-                  isFaceDetected ? 'border-[#22C55E]' : 'border-[#FFD100]'
-                }`}>
-                  <div className="absolute left-0 right-0 h-1 bg-[#22C55E] shadow-[0_0_12px_#22C55E] animate-scan-line" />
+                <div className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-full shadow-[0_0_0_9999px_rgba(0,0,0,0.72)] flex items-center justify-center">
+                  
+                  {/* Anel de Progresso SVG */}
+                  <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 100 100">
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="46"
+                      className="stroke-zinc-800/80"
+                      strokeWidth="4"
+                      fill="transparent"
+                    />
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="46"
+                      className="transition-all duration-200 ease-out"
+                      stroke={progress >= 100 ? '#22C55E' : progress > 30 ? '#FFD100' : '#3B82F6'}
+                      strokeWidth="5"
+                      strokeLinecap="round"
+                      fill="transparent"
+                      strokeDasharray="289"
+                      strokeDashoffset={289 - (progress / 100) * 289}
+                    />
+                  </svg>
+
+                  {progress < 100 && (
+                    <div className="absolute left-6 right-6 h-0.5 bg-gradient-to-r from-transparent via-[#22C55E] to-transparent shadow-[0_0_12px_#22C55E] animate-scan-line" />
+                  )}
+
+                  {progress >= 100 && (
+                    <div className="w-16 h-16 rounded-full bg-emerald-500/90 text-black flex items-center justify-center animate-scaleUp shadow-2xl">
+                      <CheckCircle className="w-10 h-10 text-black stroke-[2.5]" />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -198,14 +259,29 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
                 </div>
               )}
 
+              {/* Porcentagem */}
+              <div className="absolute top-4 inset-x-0 flex justify-center pointer-events-none">
+                <div className={`px-4 py-1 rounded-full text-xs font-mono font-black backdrop-blur-md border transition-all ${
+                  progress >= 100
+                    ? 'bg-emerald-950/90 text-emerald-400 border-emerald-500/50'
+                    : progress > 0
+                      ? 'bg-black/75 text-[#FFD100] border-[#FFD100]/40'
+                      : 'bg-black/60 text-zinc-400 border-zinc-700'
+                }`}>
+                  {progress}% CONCLUÍDO
+                </div>
+              </div>
+
               {/* Feedback em Tempo Real */}
               <div className="absolute bottom-4 left-4 right-4 bg-[#111111]/95 backdrop-blur border border-[#333333] py-2.5 px-4 rounded-2xl flex items-center gap-2.5 shadow-xl">
-                {isFaceDetected ? (
+                {progress >= 100 ? (
                   <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : isFaceDetected ? (
+                  <Sparkles className="w-4 h-4 text-[#FFD100] shrink-0 animate-bounce" />
                 ) : (
-                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+                  <Scan className="w-4 h-4 text-zinc-400 shrink-0 animate-pulse" />
                 )}
-                <span className={`text-xs font-bold tracking-wide truncate ${isFaceDetected ? 'text-emerald-400' : 'text-amber-300'}`}>
+                <span className={`text-xs font-bold tracking-wide truncate ${progress >= 100 ? 'text-emerald-400' : isFaceDetected ? 'text-white' : 'text-zinc-300'}`}>
                   {liveFeedback}
                 </span>
               </div>
@@ -214,8 +290,8 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
 
           {cameraState === 'requesting' && (
             <div className="p-6 text-center text-zinc-400 text-sm">
-              <Camera className="w-8 h-8 mx-auto mb-2 text-[#FFD100] animate-pulse" />
-              Inicializando câmera...
+              <Camera className="w-8 h-8 mx-auto mb-2 text-[#22C55E] animate-pulse" />
+              Inicializando câmera biométrica...
             </div>
           )}
 
@@ -225,7 +301,7 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
               <p>{errorMessage}</p>
               <button
                 onClick={startCamera}
-                className="mt-2 py-2 px-4 rounded-xl bg-[#FFD100] text-black font-bold cursor-pointer"
+                className="mt-2 py-2 px-4 rounded-xl bg-[#22C55E] text-black font-bold cursor-pointer"
               >
                 Tentar Novamente
               </button>
@@ -239,7 +315,7 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
           <div className="p-3 rounded-xl bg-[#1C1C1C] border border-[#2B2B2B] flex items-start gap-2.5 text-[11px] text-zinc-400">
             <Lock className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
             <span>
-              <b className="text-zinc-200">Foto Oficial do Colaborador:</b> O rosto cadastrado será a base de reconhecimento nas batidas diárias de ponto pelo celular.
+              <b className="text-zinc-200">Foto Oficial do Colaborador:</b> O rosto cadastrado servirá como validação de identidade em todas as batidas de ponto.
             </span>
           </div>
 
@@ -258,16 +334,12 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
               Cancelar
             </button>
             <button
-              onClick={handleCaptureAndEnroll}
-              disabled={isCapturing || !isFaceDetected}
-              className={`flex-1 py-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all ${
-                isFaceDetected
-                  ? 'bg-[#FFD100] hover:bg-[#E6BC00] text-black shadow-[#FFD100]/20 cursor-pointer'
-                  : 'bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed opacity-75'
-              }`}
+              onClick={handleManualCaptureAndEnroll}
+              disabled={isCapturing}
+              className="flex-1 py-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 bg-[#22C55E] hover:bg-emerald-400 text-black shadow-lg shadow-emerald-500/20 cursor-pointer transition-all"
             >
-              <ShieldCheck className={`w-4 h-4 ${isFaceDetected ? 'text-black' : 'text-zinc-500'}`} />
-              <span>{isCapturing ? 'Cadastrando...' : 'Cadastrar Face'}</span>
+              <ShieldCheck className="w-4 h-4 text-black" />
+              <span>{isCapturing ? 'Gravando...' : 'Capturar Face Agora'}</span>
             </button>
           </div>
         </div>
