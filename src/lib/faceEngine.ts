@@ -1,229 +1,422 @@
-/**
- * Motor Biométrico Facial Ultra Confiável e Rápido (Padrão Hapvida / Bancário)
- * Detecção imediata de presença facial, imune a variações de iluminação, postura e tons de pele.
- */
+import * as faceapi from '@vladmandic/face-api';
 
-export interface FaceDetectionResult {
+export type BiometricStatus =
+  | 'INITIALIZING'
+  | 'NO_FACE'
+  | 'MULTIPLE_FACES'
+  | 'FACE_TOO_FAR'
+  | 'FACE_NOT_CENTERED'
+  | 'POOR_LIGHTING'
+  | 'QUALITY_OK'
+  | 'LIVENESS_CHALLENGE'
+  | 'LIVENESS_PASSED'
+  | 'EXTRACTING_EMBEDDING'
+  | 'MATCHING'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'ERROR';
+
+export type LivenessChallengeType =
+  | 'LOOK_STRAIGHT'
+  | 'BLINK_EYES'
+  | 'TURN_HEAD_LEFT'
+  | 'TURN_HEAD_RIGHT'
+  | 'SMILE';
+
+export interface LivenessChallengeState {
+  currentChallenge: LivenessChallengeType;
+  instructions: string;
+  isCompleted: boolean;
+  stepNumber: number;
+  totalSteps: number;
+}
+
+export interface FaceAnalysisResult {
+  status: BiometricStatus;
   isFaceDetected: boolean;
-  hasSkinTones: boolean;
-  hasEyeFeatures: boolean;
-  isCentered: boolean;
-  faceScore: number;
-  brightness: number;
-  descriptor: number[];
-  photoPreview: string;
+  faceCount: number;
+  confidence: number;
+  quality: {
+    brightness: number;
+    boxArea: number;
+    isCentered: boolean;
+    isSharp: boolean;
+  };
+  landmarks?: faceapi.FaceLandmarks68;
+  descriptor?: number[]; // Vetor 128D de Deep Learning ResNet-34
+  photoPreview?: string;
+  liveness: {
+    ear: number; // Eye Aspect Ratio
+    yawRatio: number; // Head Pose Yaw
+    isBlinking: boolean;
+    isSmiling: boolean;
+    headDirection: 'CENTER' | 'LEFT' | 'RIGHT';
+  };
   errorMessage?: string;
 }
 
-export class FaceEngine {
+class FaceEngineService {
+  private isLoaded = false;
+  private isLoading = false;
+  private loadPromise: Promise<void> | null = null;
+
   /**
-   * Analisa o quadro da câmera em tempo real de forma ultra estável e responsiva.
+   * Inicializa as Redes Neurais Profundas (TinyFace, Landmarks68, FaceRecognition ResNet-34)
    */
-  public static analyzeLiveFrame(video: HTMLVideoElement): FaceDetectionResult {
-    const defaultFailed: FaceDetectionResult = {
-      isFaceDetected: false,
-      hasSkinTones: false,
-      hasEyeFeatures: false,
-      isCentered: false,
-      faceScore: 0,
-      brightness: 0,
-      descriptor: [],
-      photoPreview: '',
-      errorMessage: 'Aguardando inicialização da câmera...',
-    };
+  public async loadModels(): Promise<void> {
+    if (this.isLoaded) return;
+    if (this.isLoading && this.loadPromise) return this.loadPromise;
 
-    if (!video || video.videoWidth === 0 || video.videoHeight === 0 || video.readyState < 2) {
-      return defaultFailed;
-    }
+    this.isLoading = true;
+    this.loadPromise = (async () => {
+      try {
+        const MODEL_URL = '/models';
+        console.log('[FaceEngine] Carregando pesos neurais de /models...');
 
-    const canvas = document.createElement('canvas');
-    const size = 240;
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return defaultFailed;
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+          faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+        ]);
 
-    // Recorte central proporcional do rosto
-    const minDim = Math.min(video.videoWidth, video.videoHeight);
-    const startX = (video.videoWidth - minDim) / 2;
-    const startY = (video.videoHeight - minDim) / 2;
-
-    ctx.drawImage(video, startX, startY, minDim, minDim, 0, 0, size, size);
-    const imgData = ctx.getImageData(0, 0, size, size);
-    const data = imgData.data;
-
-    let totalLum = 0;
-    let skinPixelCount = 0;
-    const totalPixels = size * size;
-    const lumMatrix: number[][] = Array.from({ length: size }, () => Array(size).fill(0));
-
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        const idx = (y * size + x) * 4;
-        const r = data[idx];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-
-        // Luminância ITU-R BT.601
-        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-        totalLum += lum;
-        lumMatrix[y][x] = lum;
-
-        // Detecção cromática ampla para todos os tons de pele sob qualquer iluminação
-        const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
-        const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
-
-        if (r > 20 && g > 15 && b > 10 && cr >= 115 && cr <= 190 && cb >= 60 && cb <= 145) {
-          skinPixelCount++;
-        }
+        this.isLoaded = true;
+        console.log('[FaceEngine] Redes Neurais carregadas com sucesso no WebGL!');
+      } catch (err) {
+        console.error('[FaceEngine] Falha ao carregar modelos biométricos:', err);
+        throw new Error('Falha ao carregar modelos neurais de biometria facial.');
+      } finally {
+        this.isLoading = false;
       }
-    }
+    })();
 
-    const avgBrightness = Math.round(totalLum / totalPixels);
+    return this.loadPromise;
+  }
 
-    // 1. Verificação de Iluminação Mínima
-    if (avgBrightness < 12) {
-      return {
-        ...defaultFailed,
-        brightness: avgBrightness,
-        errorMessage: 'Ambiente muito escuro. Aproxime-se de uma fonte de luz.',
-      };
-    }
-
-    // 2. Cálculo de Variância da Imagem para evitar câmera tapada ou parede sólida
-    let varianceSum = 0;
-    for (let y = 0; y < size; y += 4) {
-      for (let x = 0; x < size; x += 4) {
-        varianceSum += Math.pow(lumMatrix[y][x] - avgBrightness, 2);
-      }
-    }
-    const variance = Math.sqrt(varianceSum / ((size / 4) * (size / 4)));
-
-    // Se a imagem tem contraste suficiente e presença de luz, o rosto é detectado
-    const isDetected = variance > 6 && avgBrightness >= 12;
-
-    if (!isDetected) {
-      return {
-        ...defaultFailed,
-        brightness: avgBrightness,
-        errorMessage: 'Enquadre o rosto dentro do círculo.',
-      };
-    }
-
-    // 3. Extração do Vetor Descritor 64D Normalizado (Z-Score)
-    const descriptor: number[] = [];
-    const innerX1 = Math.floor(0.15 * size);
-    const innerX2 = Math.floor(0.85 * size);
-    const innerY1 = Math.floor(0.15 * size);
-    const innerY2 = Math.floor(0.85 * size);
-
-    const innerW = innerX2 - innerX1;
-    const innerH = innerY2 - innerY1;
-
-    let innerSum = 0;
-    let innerPixels = 0;
-    for (let y = innerY1; y < innerY2; y++) {
-      for (let x = innerX1; x < innerX2; x++) {
-        innerSum += lumMatrix[y][x];
-        innerPixels++;
-      }
-    }
-    const innerMean = innerSum / (innerPixels || 1);
-
-    let innerVar = 0;
-    for (let y = innerY1; y < innerY2; y++) {
-      for (let x = innerX1; x < innerX2; x++) {
-        innerVar += Math.pow(lumMatrix[y][x] - innerMean, 2);
-      }
-    }
-    const innerStd = Math.sqrt(innerVar / (innerPixels || 1)) || 1;
-
-    // Grade 8x8 normalizada (64 dimensões)
-    const blocks = 8;
-    const blockW = innerW / blocks;
-    const blockH = innerH / blocks;
-
-    for (let by = 0; by < blocks; by++) {
-      for (let bx = 0; bx < blocks; bx++) {
-        let bSum = 0;
-        let bCount = 0;
-        for (let y = Math.floor(innerY1 + by * blockH); y < Math.floor(innerY1 + (by + 1) * blockH); y++) {
-          for (let x = Math.floor(innerX1 + bx * blockW); x < Math.floor(innerX1 + (bx + 1) * blockW); x++) {
-            const normalizedLum = (lumMatrix[y][x] - innerMean) / innerStd;
-            bSum += normalizedLum;
-            bCount++;
-          }
-        }
-        descriptor.push(Number((bSum / (bCount || 1)).toFixed(4)));
-      }
-    }
-
-    const photoPreview = canvas.toDataURL('image/jpeg', 0.88);
-
-    return {
-      isFaceDetected: true,
-      hasSkinTones: true,
-      hasEyeFeatures: true,
-      isCentered: true,
-      faceScore: 98,
-      brightness: avgBrightness,
-      descriptor,
-      photoPreview,
-    };
+  public areModelsReady(): boolean {
+    return this.isLoaded;
   }
 
   /**
-   * Comparação biométrica rápida e adaptativa.
+   * Executa a inferência de visão computacional em tempo real sobre o elemento de vídeo.
    */
-  public static compareBiometrics(
-    capturedDescriptor: number[],
-    templateDescriptor: number[] | null | undefined
-  ): { matched: boolean; reason: string } {
-    if (!templateDescriptor || templateDescriptor.length === 0) {
+  public async analyzeLiveFrame(
+    video: HTMLVideoElement,
+    options?: { captureSnapshot?: boolean }
+  ): Promise<FaceAnalysisResult> {
+    if (!this.isLoaded || !video || video.videoWidth === 0 || video.videoHeight === 0 || video.readyState < 2) {
       return {
-        matched: true, // Modo Foto Comprobatória permite validação
-        reason: 'Foto Comprobatória Registrada com Sucesso.',
+        status: 'INITIALIZING',
+        isFaceDetected: false,
+        faceCount: 0,
+        confidence: 0,
+        quality: { brightness: 0, boxArea: 0, isCentered: false, isSharp: false },
+        liveness: { ear: 0, yawRatio: 1, isBlinking: false, isSmiling: false, headDirection: 'CENTER' },
+        errorMessage: 'Aguardando inicialização das redes neurais...',
       };
     }
 
-    if (!capturedDescriptor || capturedDescriptor.length === 0) {
+    try {
+      // 1. Detecção Neural Real de Todos os Rostos no Frame (Rejeita mãos, paredes, objetos)
+      const detectorOptions = new faceapi.TinyFaceDetectorOptions({
+        inputSize: 320,
+        scoreThreshold: 0.55,
+      });
+
+      const detections = await faceapi
+        .detectAllFaces(video, detectorOptions)
+        .withFaceLandmarks()
+        .withFaceDescriptors()
+        .withFaceExpressions();
+
+      // Regra 1: Exatamente 1 rosto
+      if (detections.length === 0) {
+        return {
+          status: 'NO_FACE',
+          isFaceDetected: false,
+          faceCount: 0,
+          confidence: 0,
+          quality: { brightness: 0, boxArea: 0, isCentered: false, isSharp: false },
+          liveness: { ear: 0, yawRatio: 1, isBlinking: false, isSmiling: false, headDirection: 'CENTER' },
+          errorMessage: 'Nenhum rosto humano detectado. Posicione-se de frente para a câmera.',
+        };
+      }
+
+      if (detections.length > 1) {
+        return {
+          status: 'MULTIPLE_FACES',
+          isFaceDetected: true,
+          faceCount: detections.length,
+          confidence: 0,
+          quality: { brightness: 0, boxArea: 0, isCentered: false, isSharp: false },
+          liveness: { ear: 0, yawRatio: 1, isBlinking: false, isSmiling: false, headDirection: 'CENTER' },
+          errorMessage: 'Mais de 1 pessoa detectada! Apenas o colaborador deve estar no enquadramento.',
+        };
+      }
+
+      const primaryDetection = detections[0];
+      const box = primaryDetection.detection.box;
+      const confidence = primaryDetection.detection.score;
+      const landmarks = primaryDetection.landmarks;
+      const descriptor = Array.from(primaryDetection.descriptor);
+
+      // 2. Análise de Qualidade de Imagem e Enquadramento
+      const videoW = video.videoWidth;
+      const videoH = video.videoHeight;
+      const boxArea = box.width * box.height;
+      const minDimension = Math.min(box.width, box.height);
+
+      const centerX = box.x + box.width / 2;
+      const centerY = box.y + box.height / 2;
+      const centerDistX = Math.abs(centerX - videoW / 2) / videoW;
+      const centerDistY = Math.abs(centerY - videoH / 2) / videoH;
+      const isCentered = centerDistX < 0.28 && centerDistY < 0.28;
+
+      // Amostra de luminância
+      const brightness = this.sampleLuminance(video, box);
+
+      if (minDimension < 110) {
+        return {
+          status: 'FACE_TOO_FAR',
+          isFaceDetected: true,
+          faceCount: 1,
+          confidence,
+          quality: { brightness, boxArea, isCentered, isSharp: true },
+          landmarks,
+          liveness: { ear: 0, yawRatio: 1, isBlinking: false, isSmiling: false, headDirection: 'CENTER' },
+          errorMessage: 'Aproxime-se mais da câmera.',
+        };
+      }
+
+      if (!isCentered) {
+        return {
+          status: 'FACE_NOT_CENTERED',
+          isFaceDetected: true,
+          faceCount: 1,
+          confidence,
+          quality: { brightness, boxArea, isCentered, isSharp: true },
+          landmarks,
+          liveness: { ear: 0, yawRatio: 1, isBlinking: false, isSmiling: false, headDirection: 'CENTER' },
+          errorMessage: 'Centralize seu rosto dentro da moldura circular.',
+        };
+      }
+
+      if (brightness < 20) {
+        return {
+          status: 'POOR_LIGHTING',
+          isFaceDetected: true,
+          faceCount: 1,
+          confidence,
+          quality: { brightness, boxArea, isCentered, isSharp: true },
+          landmarks,
+          liveness: { ear: 0, yawRatio: 1, isBlinking: false, isSmiling: false, headDirection: 'CENTER' },
+          errorMessage: 'Ambiente muito escuro. Aproxime-se de uma fonte de luz.',
+        };
+      }
+
+      // 3. Extração dos Índices de Liveness (Eye Aspect Ratio & Head Pose Yaw)
+      const ear = this.computeEyeAspectRatio(landmarks);
+      const isBlinking = ear < 0.19;
+
+      const yawRatio = this.computeYawRatio(landmarks);
+      let headDirection: 'CENTER' | 'LEFT' | 'RIGHT' = 'CENTER';
+      if (yawRatio > 1.65) headDirection = 'LEFT';
+      else if (yawRatio < 0.6) headDirection = 'RIGHT';
+
+      const isSmiling = (primaryDetection.expressions?.happy || 0) > 0.65;
+
+      let photoPreview: string | undefined;
+      if (options?.captureSnapshot) {
+        photoPreview = this.captureCroppedFace(video, box);
+      }
+
+      return {
+        status: 'QUALITY_OK',
+        isFaceDetected: true,
+        faceCount: 1,
+        confidence,
+        quality: { brightness, boxArea, isCentered, isSharp: true },
+        landmarks,
+        descriptor,
+        photoPreview,
+        liveness: {
+          ear,
+          yawRatio,
+          isBlinking,
+          isSmiling,
+          headDirection,
+        },
+      };
+    } catch (err) {
+      console.error('[FaceEngine] Erro na inferência do frame:', err);
+      return {
+        status: 'ERROR',
+        isFaceDetected: false,
+        faceCount: 0,
+        confidence: 0,
+        quality: { brightness: 0, boxArea: 0, isCentered: false, isSharp: false },
+        liveness: { ear: 0, yawRatio: 1, isBlinking: false, isSmiling: false, headDirection: 'CENTER' },
+        errorMessage: 'Erro no processamento da imagem.',
+      };
+    }
+  }
+
+  /**
+   * Cálculo de Eye Aspect Ratio (EAR) usando os 68 landmarks dos olhos.
+   */
+  public computeEyeAspectRatio(landmarks: faceapi.FaceLandmarks68): number {
+    const leftEye = landmarks.getLeftEye();
+    const rightEye = landmarks.getRightEye();
+
+    const getEar = (eye: faceapi.Point[]) => {
+      const v1 = Math.hypot(eye[1].x - eye[5].x, eye[1].y - eye[5].y);
+      const v2 = Math.hypot(eye[2].x - eye[4].x, eye[2].y - eye[4].y);
+      const h = Math.hypot(eye[0].x - eye[3].x, eye[0].y - eye[3].y);
+      return (v1 + v2) / (2.0 * (h || 1));
+    };
+
+    const leftEar = getEar(leftEye);
+    const rightEar = getEar(rightEye);
+    return Number(((leftEar + rightEar) / 2.0).toFixed(3));
+  }
+
+  /**
+   * Estimação da rotação horizontal (Yaw) baseada na distância da ponta do nariz aos cantos dos olhos.
+   */
+  public computeYawRatio(landmarks: faceapi.FaceLandmarks68): number {
+    const nose = landmarks.getNose();
+    const noseTip = nose[3] || nose[0];
+    const leftEye = landmarks.getLeftEye()[0];
+    const rightEye = landmarks.getRightEye()[3];
+
+    const distLeft = Math.hypot(noseTip.x - leftEye.x, noseTip.y - leftEye.y);
+    const distRight = Math.hypot(noseTip.x - rightEye.x, noseTip.y - rightEye.y);
+
+    return Number((distLeft / (distRight || 1)).toFixed(3));
+  }
+
+  /**
+   * Amostra de luminância média dentro do bounding box facial.
+   */
+  private sampleLuminance(video: HTMLVideoElement, box: faceapi.Box): number {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 40;
+      canvas.height = 40;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return 100;
+
+      ctx.drawImage(
+        video,
+        Math.max(0, box.x),
+        Math.max(0, box.y),
+        Math.min(video.videoWidth - box.x, box.width),
+        Math.min(video.videoHeight - box.y, box.height),
+        0,
+        0,
+        40,
+        40
+      );
+
+      const imgData = ctx.getImageData(0, 0, 40, 40).data;
+      let sum = 0;
+      for (let i = 0; i < imgData.length; i += 4) {
+        sum += 0.299 * imgData[i] + 0.587 * imgData[i + 1] + 0.114 * imgData[i + 2];
+      }
+      return Math.round(sum / (40 * 40));
+    } catch {
+      return 100;
+    }
+  }
+
+  /**
+   * Captura snapshot recortado do rosto em alta definição.
+   */
+  public captureCroppedFace(video: HTMLVideoElement, box?: faceapi.Box): string {
+    try {
+      const canvas = document.createElement('canvas');
+      const size = 360;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return '';
+
+      if (box) {
+        const padX = box.width * 0.2;
+        const padY = box.height * 0.2;
+        const srcX = Math.max(0, box.x - padX);
+        const srcY = Math.max(0, box.y - padY);
+        const srcW = Math.min(video.videoWidth - srcX, box.width + padX * 2);
+        const srcH = Math.min(video.videoHeight - srcY, box.height + padY * 2);
+
+        ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, size, size);
+      } else {
+        const minDim = Math.min(video.videoWidth, video.videoHeight);
+        const srcX = (video.videoWidth - minDim) / 2;
+        const srcY = (video.videoHeight - minDim) / 2;
+        ctx.drawImage(video, srcX, srcY, minDim, minDim, 0, 0, size, size);
+      }
+
+      return canvas.toDataURL('image/jpeg', 0.9);
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Comparação Biométrica Real entre 2 Embeddings 128D (ResNet-34)
+   * Baseado no padrão euclidiano do modelo FaceRecognitionNet:
+   * - Distância <= 0.56: MESMA PESSOA (Match Aprovado)
+   * - Distância > 0.56: PESSOAS DIFERENTES (Rejeitado)
+   */
+  public compareBiometricEmbeddings(
+    capturedEmbedding: number[],
+    templateEmbedding: number[] | null | undefined
+  ): {
+    matched: boolean;
+    distance: number;
+    similarityScore: number;
+    reason: string;
+  } {
+    if (!templateEmbedding || templateEmbedding.length === 0) {
       return {
         matched: false,
-        reason: 'Rosto não detectado no enquadramento.',
+        distance: 1.0,
+        similarityScore: 0,
+        reason: 'Colaborador sem perfil biométrico cadastrado no sistema.',
       };
     }
 
-    const minLen = Math.min(capturedDescriptor.length, templateDescriptor.length);
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-
-    for (let i = 0; i < minLen; i++) {
-      const a = capturedDescriptor[i];
-      const b = templateDescriptor[i];
-      dotProduct += a * b;
-      normA += a * a;
-      normB += b * b;
-    }
-
-    normA = Math.sqrt(normA);
-    normB = Math.sqrt(normB);
-
-    if (normA === 0 || normB === 0) {
+    if (!capturedEmbedding || capturedEmbedding.length !== 128 || templateEmbedding.length !== 128) {
       return {
-        matched: true,
-        reason: 'Identidade confirmada.',
+        matched: false,
+        distance: 1.0,
+        similarityScore: 0,
+        reason: 'Vetor de características biométricas inválido.',
       };
     }
 
-    const cosineSim = dotProduct / (normA * normB);
-    const isSamePerson = cosineSim >= 0.40;
+    let sum = 0;
+    for (let i = 0; i < 128; i++) {
+      const diff = capturedEmbedding[i] - templateEmbedding[i];
+      sum += diff * diff;
+    }
+    const euclideanDistance = Math.sqrt(sum);
+
+    // Limiar padrão da arquitetura ResNet-34 para reconhecimento facial
+    const THRESHOLD = 0.56;
+    const isMatched = euclideanDistance <= THRESHOLD;
+    const similarityScore = Math.max(0, Math.min(100, Math.round((1 - euclideanDistance / 1.0) * 100)));
 
     return {
-      matched: isSamePerson,
-      reason: isSamePerson
-        ? 'Identidade Biométrica Confirmada com Sucesso'
-        : 'Rosto não confere com o colaborador cadastrado. Posicione o rosto de frente.',
+      matched: isMatched,
+      distance: Number(euclideanDistance.toFixed(4)),
+      similarityScore,
+      reason: isMatched
+        ? 'Identidade Biométrica Confirmada com Sucesso.'
+        : `Rosto não corresponde ao colaborador cadastrado (Distância: ${euclideanDistance.toFixed(2)}).`,
     };
   }
 }
+
+export const FaceEngine = new FaceEngineService();

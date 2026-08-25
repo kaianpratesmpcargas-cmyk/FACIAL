@@ -18,16 +18,43 @@ export interface Employee {
 
 export type FaceProfileStatus = 'ATIVO' | 'PENDENTE' | 'REVOGADO';
 
-export interface FaceProfile {
+export interface BiometricProfile {
   id: string;
   employee_id: string;
-  provider_reference: string;
-  template_version: string;
-  descriptor: number[]; // Vetor de características faciais 64D/128D
-  photo_preview?: string; // Miniatura de referência para conferência visual
+  provider: string; // 'face-api-resnet34'
+  model_version: string; // 'v1.0'
+  embedding: number[]; // 128D Float Vector
+  quality_score: number;
+  reference_photo_path?: string;
+  photo_preview?: string; // Compatibilidade de visualização
+  descriptor?: number[]; // Compatibilidade com código legado
   status: FaceProfileStatus;
   created_at: string;
   updated_at: string;
+}
+
+export type FaceProfile = BiometricProfile; // Alias para compatibilidade
+
+export type BiometricVerificationStatus = 'PENDENTE' | 'APROVADO' | 'REJEITADO' | 'EXPIRADO';
+
+export interface BiometricVerification {
+  id: string;
+  employee_id: string;
+  session_token: string;
+  verification_type: RecordType;
+  status: BiometricVerificationStatus;
+  match_score?: number | null;
+  liveness_score?: number | null;
+  challenge_type?: string | null;
+  failure_reason?: string | null;
+  capture_path?: string | null;
+  device_id?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  location_accuracy?: number | null;
+  location_address?: string | null;
+  expires_at: string;
+  created_at: string;
 }
 
 export type DeviceStatus = 'ATIVO' | 'BLOQUEADO' | 'RESERVA';
@@ -52,6 +79,7 @@ export interface TimeRecord {
   id: string;
   employee_id: string;
   device_id: string;
+  verification_id?: string | null; // Vínculo com a sessão de verificação biométrica real
   record_type: RecordType;
   recorded_at: string;
   latitude: number | null;
@@ -73,6 +101,7 @@ export interface TimeRecord {
   // Relações expandidas para exibição
   employee?: Employee;
   device?: Device;
+  verification?: BiometricVerification;
 }
 
 export type WorkSessionStatus = 'NAO_INICIADO' | 'EM_JORNADA' | 'EM_INTERVALO' | 'FINALIZADA';

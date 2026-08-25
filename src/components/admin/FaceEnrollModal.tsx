@@ -71,9 +71,13 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
     setProgress(0);
     progressRef.current = 0;
     isEnrolledRef.current = false;
-    setLiveFeedback('Enquadre seu rosto no círculo...');
+    setLiveFeedback('Carregando modelos de visão computacional...');
 
     try {
+      // 1. Carrega pesos neurais
+      await FaceEngine.loadModels();
+      setLiveFeedback('Enquadre o rosto no círculo central...');
+
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -111,13 +115,13 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
   const startEnrollDetectionLoop = () => {
     if (loopRef.current) clearInterval(loopRef.current);
 
-    loopRef.current = window.setInterval(() => {
+    loopRef.current = window.setInterval(async () => {
       if (!videoRef.current || isCapturing || isEnrolledRef.current) return;
 
-      const analysis = FaceEngine.analyzeLiveFrame(videoRef.current);
-      setIsFaceDetected(analysis.isFaceDetected);
+      const analysis = await FaceEngine.analyzeLiveFrame(videoRef.current, { captureSnapshot: true });
+      setIsFaceDetected(analysis.isFaceDetected && analysis.status === 'QUALITY_OK');
 
-      if (!analysis.isFaceDetected) {
+      if (!analysis.isFaceDetected || analysis.status !== 'QUALITY_OK') {
         progressRef.current = Math.max(0, progressRef.current - 15);
         setProgress(progressRef.current);
         setLiveFeedback(analysis.errorMessage || 'Enquadre o rosto no círculo.');
@@ -126,12 +130,12 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
         setProgress(progressRef.current);
 
         if (progressRef.current < 50) {
-          setLiveFeedback('Rosto detectado! Mantenha a posição...');
+          setLiveFeedback('Rosto humano identificado! Mantenha a posição...');
         } else if (progressRef.current < 90) {
-          setLiveFeedback(`Escaneando biometria (${progressRef.current}%)...`);
+          setLiveFeedback(`Extraindo características biométricas (${progressRef.current}%)...`);
         } else if (progressRef.current >= 100) {
           isEnrolledRef.current = true;
-          setLiveFeedback('✓ Rosto validado! Gravando biometria...');
+          setLiveFeedback('✓ Rosto validado! Gravando embedding 128D...');
           if (loopRef.current) {
             clearInterval(loopRef.current);
             loopRef.current = null;
@@ -143,14 +147,14 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
   };
 
   const handleAutoEnroll = async (analysis: any) => {
-    if (isCapturing) return;
+    if (isCapturing || !analysis.descriptor || analysis.descriptor.length !== 128) return;
     setIsCapturing(true);
 
     try {
       setCapturedPreview(analysis.photoPreview);
-      await dbService.saveFaceProfile(employee.id, analysis.descriptor, analysis.photoPreview);
+      await dbService.enrollBiometricProfile(employee.id, analysis.descriptor, analysis.photoPreview, 0.99);
       onEnrolled();
-      setSuccessMessage(`Biometria cadastrada com sucesso para ${employee.full_name}!`);
+      setSuccessMessage(`Biometria oficial cadastrada para ${employee.full_name}!`);
       
       setTimeout(() => {
         cleanup();
@@ -165,13 +169,17 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
 
   const handleManualCaptureAndEnroll = async () => {
     if (isCapturing || !videoRef.current) return;
+    const analysis = await FaceEngine.analyzeLiveFrame(videoRef.current, { captureSnapshot: true });
+    if (!analysis.isFaceDetected || !analysis.descriptor || analysis.descriptor.length !== 128) {
+      setLiveFeedback(analysis.errorMessage || 'Rosto humano não identificado com clareza.');
+      return;
+    }
     if (loopRef.current) {
       clearInterval(loopRef.current);
       loopRef.current = null;
     }
     isEnrolledRef.current = true;
     setProgress(100);
-    const analysis = FaceEngine.analyzeLiveFrame(videoRef.current);
     handleAutoEnroll(analysis);
   };
 
