@@ -13,6 +13,7 @@ export interface Employee {
   created_at: string;
   updated_at: string;
   has_face_profile?: boolean;
+  photo_preview?: string; // Foto de referência cadastrada no 1º scan
 }
 
 export type FaceProfileStatus = 'ATIVO' | 'PENDENTE' | 'REVOGADO';
@@ -22,7 +23,8 @@ export interface FaceProfile {
   employee_id: string;
   provider_reference: string;
   template_version: string;
-  descriptor: number[]; // Vetor de características faciais 128D (LGPD compliant)
+  descriptor: number[]; // Vetor de características faciais 64D/128D
+  photo_preview?: string; // Miniatura de referência para conferência visual
   status: FaceProfileStatus;
   created_at: string;
   updated_at: string;
@@ -115,6 +117,7 @@ export interface FacialVerificationResult {
   livenessPassed: boolean;
   errorMessage?: string;
   descriptor?: number[];
+  photoPreview?: string;
 }
 
 export interface NextActionInfo {

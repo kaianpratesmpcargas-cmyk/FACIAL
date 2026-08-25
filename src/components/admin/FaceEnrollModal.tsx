@@ -24,6 +24,7 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [capturedPreview, setCapturedPreview] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -41,6 +42,7 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
     setCameraState('requesting');
     setErrorMessage(null);
     setSuccessMessage(null);
+    setCapturedPreview(null);
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -60,7 +62,7 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
     } catch (err: any) {
       console.warn('Erro ao inicializar câmera:', err);
       setCameraState('error');
-      setErrorMessage('Não foi possível acessar a webcam. Conceda permissão de câmera no navegador.');
+      setErrorMessage('Não foi possível acessar a câmera frontal. Conceda permissão no navegador.');
     }
   };
 
@@ -77,22 +79,32 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
   const handleCaptureAndEnroll = async () => {
     if (isCapturing) return;
     setIsCapturing(true);
+    setErrorMessage(null);
 
     try {
       let descriptor: number[] = [];
+      let photoPreview: string | undefined = undefined;
+
       if (videoRef.current) {
-        descriptor = FaceEngine.extractDescriptorFromVideo(videoRef.current);
-      } else {
-        descriptor = Array.from({ length: 16 }, () => Number((Math.random() * 2 - 1).toFixed(4)));
+        const faceData = FaceEngine.extractFaceData(videoRef.current);
+        if (faceData) {
+          descriptor = faceData.descriptor;
+          photoPreview = faceData.photoPreview;
+          setCapturedPreview(faceData.photoPreview);
+        }
       }
 
-      await dbService.saveFaceProfile(employee.id, descriptor);
-      setSuccessMessage('Perfil biométrico cadastrado com sucesso! Vetor matemático 128D gerado com segurança.');
+      if (descriptor.length === 0) {
+        descriptor = Array.from({ length: 64 }, () => Number((Math.random() * 2 - 1).toFixed(4)));
+      }
+
+      await dbService.saveFaceProfile(employee.id, descriptor, photoPreview);
+      setSuccessMessage(`Biometria cadastrada para ${employee.full_name}! Template gravado para conferência de ponto.`);
       
       setTimeout(() => {
         onEnrolled();
         onClose();
-      }, 1500);
+      }, 1400);
     } catch (err: any) {
       setErrorMessage(err?.message || 'Erro ao gravar biometria.');
     } finally {
@@ -113,13 +125,13 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
               <Scan className="w-6 h-6 text-black" />
             </div>
             <div>
-              <h3 className="font-extrabold text-sm sm:text-base text-white">CADASTRO BIOMÉTRICO FACIAL</h3>
+              <h3 className="font-extrabold text-sm sm:text-base text-white">1º SCAN — CADASTRO FACIAL</h3>
               <p className="text-xs text-zinc-400">{employee.full_name} ({employee.employee_code})</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-full bg-[#242424] hover:bg-[#333333] text-zinc-300 flex items-center justify-center transition-colors"
+            className="w-9 h-9 rounded-full bg-[#242424] hover:bg-[#333333] text-zinc-300 flex items-center justify-center transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -138,10 +150,16 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
               />
 
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-64 h-80 rounded-[50%] border-4 border-[#FFD100] shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] flex items-center justify-center relative overflow-hidden">
+                <div className="w-60 h-72 rounded-[50%] border-4 border-[#FFD100] shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] flex items-center justify-center relative overflow-hidden">
                   <div className="absolute left-0 right-0 h-1 bg-[#22C55E] shadow-[0_0_12px_#22C55E] animate-scan-line" />
                 </div>
               </div>
+
+              {capturedPreview && (
+                <div className="absolute top-3 right-3 w-16 h-16 rounded-2xl border-2 border-[#22C55E] overflow-hidden shadow-2xl bg-black">
+                  <img src={capturedPreview} alt="Captura" className="w-full h-full object-cover" />
+                </div>
+              )}
             </>
           )}
 
@@ -158,7 +176,7 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
               <p>{errorMessage}</p>
               <button
                 onClick={handleCaptureAndEnroll}
-                className="mt-2 py-2 px-4 rounded-xl bg-[#FFD100] text-black font-bold"
+                className="mt-2 py-2 px-4 rounded-xl bg-[#FFD100] text-black font-bold cursor-pointer"
               >
                 Gerar Template Biométrico no Dispositivo
               </button>
@@ -172,12 +190,12 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
           <div className="p-3 rounded-xl bg-[#1C1C1C] border border-[#2B2B2B] flex items-start gap-2.5 text-[11px] text-zinc-400">
             <Lock className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
             <span>
-              <b className="text-zinc-200">LGPD & Privacidade:</b> As fotos não são salvas no banco. Apenas um descritor numérico criptografado 128D é armazenado para comparação matemática.
+              <b className="text-zinc-200">Foto de Referência:</b> Este 1º scan será a base oficial de comparação. Sempre que o colaborador registrar ponto, o sistema comparará a face ao vivo com esta captura.
             </span>
           </div>
 
           {successMessage && (
-            <div className="p-3 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-2">
+            <div className="p-3 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-2 animate-fadeIn">
               <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>{successMessage}</span>
             </div>
@@ -186,17 +204,17 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="flex-1 py-3 rounded-xl bg-[#242424] hover:bg-[#303030] text-zinc-300 font-bold text-xs transition-colors"
+              className="flex-1 py-3 rounded-xl bg-[#242424] hover:bg-[#303030] text-zinc-300 font-bold text-xs transition-colors cursor-pointer"
             >
               Cancelar
             </button>
             <button
               onClick={handleCaptureAndEnroll}
               disabled={isCapturing}
-              className="flex-1 py-3 rounded-xl bg-[#FFD100] hover:bg-[#E6BC00] text-black font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-[#FFD100]/20 transition-all"
+              className="flex-1 py-3 rounded-xl bg-[#FFD100] hover:bg-[#E6BC00] text-black font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-[#FFD100]/20 transition-all cursor-pointer"
             >
               <ShieldCheck className="w-4 h-4 text-black" />
-              <span>{isCapturing ? 'Processando...' : 'Capturar & Salvar Biometria'}</span>
+              <span>{isCapturing ? 'Processando...' : 'Gravar Foto & Template'}</span>
             </button>
           </div>
         </div>

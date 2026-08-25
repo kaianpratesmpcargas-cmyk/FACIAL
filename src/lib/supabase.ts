@@ -30,7 +30,6 @@ const STORAGE_KEYS = {
   AUDIT_LOGS: 'mp_cargas_db_audit_logs_v2',
 };
 
-// Começa com arrays 100% vazios para o administrador cadastrar os funcionários reais da MP CARGAS
 const INITIAL_EMPLOYEES: Employee[] = [];
 const INITIAL_DEVICES: Device[] = [];
 const INITIAL_FACE_PROFILES: FaceProfile[] = [];
@@ -56,7 +55,6 @@ function setStored<T>(key: string, data: T[]): void {
 }
 
 export const dbService = {
-  // Limpa o banco local caso deseje reiniciar do zero
   clearAllData() {
     Object.values(STORAGE_KEYS).forEach((k) => localStorage.removeItem(k));
   },
@@ -68,10 +66,14 @@ export const dbService = {
     }
     const emps = getStored<Employee>(STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES);
     const faces = getStored<FaceProfile>(STORAGE_KEYS.FACE_PROFILES, INITIAL_FACE_PROFILES);
-    return emps.map(e => ({
-      ...e,
-      has_face_profile: faces.some(f => f.employee_id === e.id && f.status === 'ATIVO')
-    }));
+    return emps.map(e => {
+      const profile = faces.find(f => f.employee_id === e.id && f.status === 'ATIVO');
+      return {
+        ...e,
+        has_face_profile: Boolean(profile),
+        photo_preview: profile?.photo_preview,
+      };
+    });
   },
 
   async getEmployeeById(id: string): Promise<Employee | null> {
@@ -173,7 +175,7 @@ export const dbService = {
     return profiles.find(p => p.employee_id === employeeId && p.status === 'ATIVO') || null;
   },
 
-  async saveFaceProfile(employeeId: string, descriptor: number[]): Promise<FaceProfile> {
+  async saveFaceProfile(employeeId: string, descriptor: number[], photoPreview?: string): Promise<FaceProfile> {
     const nowIso = new Date().toISOString();
     if (isSupabaseConfigured && supabase) {
       const { data } = await supabase.from('face_profiles').upsert({
@@ -196,6 +198,7 @@ export const dbService = {
       provider_reference: 'mp_biometrics_v1',
       template_version: 'v1.0',
       descriptor,
+      photo_preview: photoPreview || (existingIdx >= 0 ? profiles[existingIdx].photo_preview : undefined),
       status: 'ATIVO',
       created_at: existingIdx >= 0 ? profiles[existingIdx].created_at : nowIso,
       updated_at: nowIso,
