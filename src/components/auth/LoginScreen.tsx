@@ -44,9 +44,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         return;
       }
 
-      // 2. VERIFICA LOGIN DE FUNCIONÁRIO (Senha padrão: 1234)
+      // 2. VERIFICA LOGIN DE FUNCIONÁRIO (Senha: 1234)
       if (password !== '1234') {
-        setError('Senha incorreta. Para funcionários a senha padrão é 1234.');
+        setError('CPF ou senha incorretos. Verifique suas credenciais.');
         setIsLoading(false);
         return;
       }
@@ -88,7 +88,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
               </span>
             </h1>
             <p className="text-xs text-zinc-400 font-medium mt-1">
-              Acesso exclusivo para funcionários e gestão
+              Acesso exclusivo para colaboradores e gestão
             </p>
           </div>
         </div>
@@ -129,7 +129,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             />
           </div>
 
-          {/* Mensagem de Erro */}
+          {/* Mensagem de Erro Discreta */}
           {error && (
             <div className="p-3 rounded-2xl bg-red-950/80 border border-red-500/40 text-red-300 text-xs font-semibold flex items-center gap-2 animate-shake">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
