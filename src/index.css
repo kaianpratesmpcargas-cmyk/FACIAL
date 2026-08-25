@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@theme {
+  --color-mp-yellow: #FFD100;
+  --color-mp-yellow-hover: #E6BC00;
+  --color-mp-yellow-light: #FFF5CC;
+  --color-mp-black: #111111;
+  --color-mp-surface: #181818;
+  --color-mp-surface-light: #242424;
+  --color-mp-surface-border: #333333;
+  --color-mp-success: #22C55E;
+  --color-mp-error: #EF4444;
+  --color-mp-warning: #F59E0B;
+  --color-mp-info: #3B82F6;
+  --color-mp-muted: #8E8E93;
+  --color-mp-card: #1F1F1F;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background-color: #111111;
+  color: #FFFFFF;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+  touch-action: manipulation;
+  overflow-x: hidden;
+}
+
+/* Custom modern scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #181818;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333333;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #FFD100;
+}
+
+/* Pulse radar animation for biometric capture */
+@keyframes radar-sweep {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-radar {
+  animation: radar-sweep 4s linear infinite;
+}
+
+@keyframes scan-line {
+  0% {
+    top: 5%;
+    opacity: 0.8;
+  }
+  50% {
+    top: 90%;
+    opacity: 1;
+  }
+  100% {
+    top: 5%;
+    opacity: 0.8;
+  }
+}
+
+.animate-scan-line {
+  animation: scan-line 2.2s ease-in-out infinite;
+}
