@@ -62,20 +62,21 @@ export const dbService = {
   },
 
   async getEmployees(): Promise<Employee[]> {
-    const localFaces = getStored<FaceProfile>(STORAGE_KEYS.FACE_PROFILES, INITIAL_FACE_PROFILES);
+    const localFaces = getStored<BiometricProfile>(STORAGE_KEYS.FACE_PROFILES, INITIAL_FACE_PROFILES as any);
 
     if (isSupabaseConfigured && supabase) {
       try {
         const { data: emps, error: empErr } = await supabase.from('employees').select('*').order('full_name');
-        const { data: faces } = await supabase.from('face_profiles').select('*').eq('status', 'ATIVO');
+        const { data: biometrics } = await supabase.from('biometric_profiles').select('employee_id, reference_photo_path, status').eq('status', 'ATIVO');
         
         if (!empErr && emps) {
           return emps.map(e => {
-            const profile = faces?.find(f => f.employee_id === e.id) || localFaces.find(f => f.employee_id === e.id);
+            const bio = biometrics?.find(b => b.employee_id === e.id) || localFaces.find(f => f.employee_id === e.id);
+            const hasFace = Boolean(bio || e.photo_preview);
             return {
               ...e,
-              has_face_profile: Boolean(profile),
-              photo_preview: profile?.photo_preview,
+              has_face_profile: hasFace,
+              photo_preview: bio?.reference_photo_path || (bio as any)?.photo_preview || e.photo_preview,
             };
           });
         }
@@ -86,11 +87,12 @@ export const dbService = {
 
     const emps = getStored<Employee>(STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES);
     return emps.map(e => {
-      const profile = localFaces.find(f => f.employee_id === e.id && f.status === 'ATIVO');
+      const bio = localFaces.find(f => f.employee_id === e.id && f.status === 'ATIVO');
+      const hasFace = Boolean(bio || e.photo_preview);
       return {
         ...e,
-        has_face_profile: Boolean(profile),
-        photo_preview: profile?.photo_preview,
+        has_face_profile: hasFace,
+        photo_preview: bio?.reference_photo_path || (bio as any)?.photo_preview || e.photo_preview,
       };
     });
   },
@@ -231,14 +233,23 @@ export const dbService = {
 
         if (!error && data && data.length > 0) {
           const row = data[0];
+          let embeddingArray: number[] = [];
+          if (typeof row.embedding === 'string') {
+            embeddingArray = JSON.parse(row.embedding);
+          } else if (Array.isArray(row.embedding)) {
+            embeddingArray = row.embedding;
+          }
+
           return {
             id: row.id,
             employee_id: row.employee_id,
             provider: row.provider || 'face-api-resnet34',
             model_version: row.model_version || 'v1.0',
-            embedding: typeof row.embedding === 'string' ? JSON.parse(row.embedding) : row.embedding,
+            embedding: embeddingArray,
+            descriptor: embeddingArray,
             quality_score: row.quality_score || 0.98,
             reference_photo_path: row.reference_photo_path || localProfile?.reference_photo_path,
+            photo_preview: row.reference_photo_path || localProfile?.photo_preview,
             status: row.status || 'ATIVO',
             created_at: row.created_at,
             updated_at: row.updated_at,

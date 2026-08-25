@@ -32,8 +32,8 @@ export async function getCurrentGPSPosition(): Promise<GeoLocationInfo> {
 
     const options: PositionOptions = {
       enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 0, // 0 = força leitura de satélite/rede em tempo real no momento exato
+      timeout: 3500,
+      maximumAge: 10000,
     };
 
     navigator.geolocation.getCurrentPosition(
@@ -42,12 +42,12 @@ export async function getCurrentGPSPosition(): Promise<GeoLocationInfo> {
         const lon = pos.coords.longitude;
         const acc = Math.round(pos.coords.accuracy * 10) / 10;
         
-        let cityState = 'Localização Corporativa';
+        let cityState = 'Salvador - BA';
         let fullAddress = `Coordenadas: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
 
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 3500);
+          const timeoutId = setTimeout(() => controller.abort(), 1200);
 
           const res = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=16&addressdetails=1`,

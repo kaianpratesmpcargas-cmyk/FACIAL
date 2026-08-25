@@ -279,69 +279,71 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
   };
 
   /**
-   * Submissão Server-Side do Ponto com Token de Sessão e GPS
+   * Submissão Server-Side do Ponto com Token de Sessão, GPS e Timeout de Proteção
    */
   const executeServerVerification = async (embedding: number[], photoPreview: string) => {
     if (isProcessing) return;
     setIsProcessing(true);
     setStatusText('Gravando registro com geolocalização GPS...');
 
+    let timeoutId: any = null;
+
     try {
-      const location = await getCurrentGPSPosition();
-      const recordedAtIso = new Date().toISOString();
-      const idempotencyKey = crypto.randomUUID();
-      const isOnline = navigator.onLine;
+      // Promise com timeout máximo de 8.5s para evitar travamento infinito
+      const verificationPromise = (async () => {
+        const location = await getCurrentGPSPosition();
+        const recordedAtIso = new Date().toISOString();
+        const idempotencyKey = crypto.randomUUID();
+        const isOnline = navigator.onLine;
 
-      if (!sessionRef.current) {
-        throw new Error('Sessão biométrica expirada. Reinicie a captura.');
-      }
-
-      if (!isOnline) {
-        // Contingência Offline
-        syncManager.enqueueOfflinePunch({
-          idempotency_key: idempotencyKey,
-          employee_id: employee.id,
-          device_id: device?.id || 'b1111111-1111-4111-8111-111111111111',
-          record_type: recordType,
-          recorded_at: recordedAtIso,
-          latitude: location.latitude,
-          longitude: location.longitude,
-          location_accuracy: location.accuracy,
-          location_address: location.cityState,
-          photo_preview: photoPreview,
-          verification_score: 0.99,
-        });
-      } else {
-        // RPC Seguro Server-Side
-        const result = await dbService.submitBiometricPunch({
-          verificationId: sessionRef.current.verificationId,
-          sessionToken: sessionRef.current.sessionToken,
-          employeeId: employee.id,
-          deviceId: device?.id || 'b1111111-1111-4111-8111-111111111111',
-          recordType,
-          embedding,
-          livenessScore: 0.99,
-          photoPreview,
-          latitude: location.latitude,
-          longitude: location.longitude,
-          locationAccuracy: location.accuracy,
-          locationAddress: location.cityState,
-          idempotencyKey,
-        });
-
-        if (!result.success) {
-          throw new Error(result.error || 'Validação biométrica não autorizada pelo servidor.');
+        if (!sessionRef.current) {
+          throw new Error('Sessão biométrica expirada. Reinicie a captura.');
         }
 
-        // Se for o 1º ponto de um funcionário sem biometria prévia, cadastra o perfil
-        if (!faceProfileRef.current && embedding.length === 128) {
-          await dbService.enrollBiometricProfile(employee.id, embedding, photoPreview, 0.99);
-        }
-      }
+        if (!isOnline) {
+          // Contingência Offline
+          syncManager.enqueueOfflinePunch({
+            idempotency_key: idempotencyKey,
+            employee_id: employee.id,
+            device_id: device?.id || 'b1111111-1111-4111-8111-111111111111',
+            record_type: recordType,
+            recorded_at: recordedAtIso,
+            latitude: location.latitude,
+            longitude: location.longitude,
+            location_accuracy: location.accuracy,
+            location_address: location.cityState,
+            photo_preview: photoPreview,
+            verification_score: 0.99,
+          });
+        } else {
+          // RPC Seguro Server-Side
+          const result = await dbService.submitBiometricPunch({
+            verificationId: sessionRef.current.verificationId,
+            sessionToken: sessionRef.current.sessionToken,
+            employeeId: employee.id,
+            deviceId: device?.id || 'b1111111-1111-4111-8111-111111111111',
+            recordType,
+            embedding,
+            livenessScore: 0.99,
+            photoPreview,
+            latitude: location.latitude,
+            longitude: location.longitude,
+            locationAccuracy: location.accuracy,
+            locationAddress: location.cityState,
+            idempotencyKey,
+          });
 
-      setTimeout(() => {
-        cleanup();
-        onSuccess({
+          if (!result.success) {
+            throw new Error(result.error || 'Validação biométrica não autorizada pelo servidor.');
+          }
+
+          // Se for o 1º ponto de um funcionário sem biometria prévia, cadastra o perfil
+          if (!faceProfileRef.current && embedding.length === 128) {
+            await dbService.enrollBiometricProfile(employee.id, embedding, photoPreview, 0.99);
+          }
+        }
+
+        return {
           recordType,
           recordedAt: recordedAtIso,
           locationAddress: location.cityState,
@@ -351,12 +353,27 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           photoPreview,
           googleMapsUrl: location.googleMapsUrl || getGoogleMapsUrl(location.latitude, location.longitude),
           isOffline: !isOnline,
-        });
+        };
+      })();
+
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error('Tempo limite de validação excedido. Verifique a conexão e tente novamente.'));
+        }, 8500);
+      });
+
+      const punchResult: any = await Promise.race([verificationPromise, timeoutPromise]);
+      clearTimeout(timeoutId);
+
+      setTimeout(() => {
+        cleanup();
+        onSuccess(punchResult);
       }, 350);
     } catch (err: any) {
+      if (timeoutId) clearTimeout(timeoutId);
       console.error('[CameraPunchModal] Falha na validação do ponto:', err);
       setCameraState('error');
-      setErrorMessage(err?.message || 'Falha na validação biométrica com o servidor.');
+      setErrorMessage(err?.message || 'Não foi possível concluir a validação. Tente novamente.');
     } finally {
       setIsProcessing(false);
     }
