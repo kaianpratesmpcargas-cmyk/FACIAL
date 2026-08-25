@@ -6,17 +6,13 @@ import {
   ShieldAlert, 
   CheckCircle2, 
   Scan, 
-  RefreshCw,
-  Smartphone,
-  Sparkles,
-  Eye,
-  ArrowLeftRight,
-  Smile,
-  ShieldCheck,
-  AlertCircle
+  RefreshCw, 
+  Smartphone, 
+  Sparkles, 
+  AlertCircle 
 } from 'lucide-react';
 import type { Employee, RecordType, Device, BiometricProfile } from '../../types';
-import { FaceEngine, type FaceAnalysisResult, type LivenessChallengeType } from '../../lib/faceEngine';
+import { FaceEngine, type FaceAnalysisResult } from '../../lib/faceEngine';
 import { getCurrentGPSPosition, getGoogleMapsUrl } from '../../lib/location';
 import { dbService } from '../../lib/supabase';
 import { syncManager } from '../../lib/offlineSync';
@@ -55,25 +51,16 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
 
   const [cameraState, setCameraState] = useState<'requesting' | 'active' | 'error'>('requesting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [statusText, setStatusText] = useState('Inicializando redes neurais de biometria...');
+  const [statusText, setStatusText] = useState('Inicializando biometria facial...');
   const [isFaceValid, setIsFaceValid] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [isSuccessFlash, setIsSuccessFlash] = useState(false);
 
-  // Estados de Desafio Liveness Ativo
-  const [currentChallenge, setCurrentChallenge] = useState<LivenessChallengeType>('LOOK_STRAIGHT');
-  const [challengeStep, setChallengeStep] = useState<'STEP1_ALIGN' | 'STEP2_CHALLENGE' | 'STEP3_VERIFYING'>('STEP1_ALIGN');
-  const [livenessFeedback, setLivenessFeedback] = useState('Olhe diretamente para a câmera');
-
   const progressRef = useRef(0);
   const isFinishedRef = useRef(false);
   const faceProfileRef = useRef<BiometricProfile | null>(null);
-  const sessionRef = useRef<{ verificationId: string; sessionToken: string; challengeType: string } | null>(null);
-  const hasBlinkedRef = useRef(false);
-  const hasTurnedLeftRef = useRef(false);
-  const hasTurnedRightRef = useRef(false);
-  const hasSmiledRef = useRef(false);
+  const sessionRef = useRef<{ verificationId: string; sessionToken: string } | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
@@ -110,10 +97,6 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
     progressRef.current = 0;
     setProgress(0);
     isFinishedRef.current = false;
-    hasBlinkedRef.current = false;
-    hasTurnedLeftRef.current = false;
-    hasTurnedRightRef.current = false;
-    hasSmiledRef.current = false;
   };
 
   const initSessionAndCamera = async () => {
@@ -123,7 +106,6 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
     setProgress(0);
     progressRef.current = 0;
     isFinishedRef.current = false;
-    setChallengeStep('STEP1_ALIGN');
 
     try {
       // 1. Carrega pesos neurais deep learning
@@ -134,21 +116,16 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
       const profile = await dbService.getBiometricProfile(employee.id);
       faceProfileRef.current = profile;
 
-      // 3. Sorteia desafio aleatório de liveness
-      const challenges: LivenessChallengeType[] = ['BLINK_EYES', 'TURN_HEAD_LEFT', 'TURN_HEAD_RIGHT', 'SMILE'];
-      const chosenChallenge = challenges[Math.floor(Math.random() * challenges.length)];
-      setCurrentChallenge(chosenChallenge);
-
-      // 4. Cria sessão temporária de validação no backend
+      // 3. Cria sessão temporária de validação no backend
       const session = await dbService.createVerificationSession({
         employeeId: employee.id,
         deviceId: device?.id || 'b1111111-1111-4111-8111-111111111111',
         recordType,
-        challengeType: chosenChallenge,
+        challengeType: 'PASSIVE_BIOMETRIC',
       });
       sessionRef.current = session;
 
-      // 5. Inicia a câmera de alta definição
+      // 4. Inicia a câmera de alta definição
       setStatusText('Acessando câmera frontal...');
       let stream: MediaStream;
       try {
@@ -175,8 +152,8 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
         video.onloadedmetadata = () => {
           video.play().catch(console.error);
           setCameraState('active');
-          setStatusText('Enquadre seu rosto na moldura circular...');
-          startBiometricProcessingLoop(chosenChallenge);
+          setStatusText('Posicione seu rosto dentro do círculo...');
+          startAutomaticBiometricLoop();
         };
       }
     } catch (err: any) {
@@ -189,22 +166,23 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
   };
 
   /**
-   * Loop Central de Inferência Biométrica Real com Redes Neurais e Liveness
+   * Loop Totalmente Automático de Inferência Biométrica Real
+   * Sem exigir sorrisos, gestos forçados ou etapas manuais
    */
-  const startBiometricProcessingLoop = (activeChallenge: LivenessChallengeType) => {
+  const startAutomaticBiometricLoop = () => {
     if (loopRef.current) clearInterval(loopRef.current);
 
     loopRef.current = window.setInterval(async () => {
       if (!videoRef.current || isProcessing || isFinishedRef.current) return;
 
       const analysis: FaceAnalysisResult = await FaceEngine.analyzeLiveFrame(videoRef.current, {
-        captureSnapshot: progressRef.current >= 80,
+        captureSnapshot: progressRef.current >= 75,
       });
 
-      // 1. Validação de Presença e Singularidade (Rejeita mãos, paredes, objetos, múltiplos rostos)
+      // 1. Validação de Singularidade e Qualidade (Rejeita mãos, paredes, objetos, múltiplos rostos)
       if (analysis.status === 'NO_FACE') {
         setIsFaceValid(false);
-        progressRef.current = Math.max(0, progressRef.current - 15);
+        progressRef.current = Math.max(0, progressRef.current - 20);
         setProgress(progressRef.current);
         setStatusText(analysis.errorMessage || 'Posicione seu rosto dentro do círculo.');
         return;
@@ -214,7 +192,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
         setIsFaceValid(false);
         progressRef.current = 0;
         setProgress(0);
-        setStatusText('⚠️ Mais de uma pessoa detectada! Apenas o colaborador deve estar diante da câmera.');
+        setStatusText('⚠️ Mais de 1 pessoa detectada! Apenas o colaborador deve estar no enquadramento.');
         return;
       }
 
@@ -230,7 +208,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
         setIsFaceValid(false);
         progressRef.current = Math.max(0, progressRef.current - 10);
         setProgress(progressRef.current);
-        setStatusText('Centralize seu rosto no enquadramento.');
+        setStatusText('Centralize seu rosto no círculo.');
         return;
       }
 
@@ -238,65 +216,11 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
         setIsFaceValid(false);
         progressRef.current = Math.max(0, progressRef.current - 10);
         setProgress(progressRef.current);
-        setStatusText('Ambiente escuro. Aproxime-se de uma fonte de luz.');
+        setStatusText('Ambiente com pouca luz. Aproxime-se de uma fonte de luz.');
         return;
       }
 
-      // 2. Etapa 1: Enquadramento e Alinhamento Central
-      setIsFaceValid(true);
-
-      if (progressRef.current < 40) {
-        progressRef.current = Math.min(40, progressRef.current + 10);
-        setProgress(progressRef.current);
-        setStatusText('Rosto identificado! Mantenha a posição...');
-        setChallengeStep('STEP1_ALIGN');
-        return;
-      }
-
-      // 3. Etapa 2: Execução do Desafio de Liveness Ativo (Anti-Spoofing de Foto/Vídeo)
-      setChallengeStep('STEP2_CHALLENGE');
-
-      let challengeCompleted = false;
-
-      if (activeChallenge === 'BLINK_EYES') {
-        setLivenessFeedback('Pisque os olhos 1 vez');
-        if (analysis.liveness.isBlinking) {
-          hasBlinkedRef.current = true;
-        }
-        if (hasBlinkedRef.current && !analysis.liveness.isBlinking) {
-          challengeCompleted = true;
-        }
-      } else if (activeChallenge === 'TURN_HEAD_LEFT') {
-        setLivenessFeedback('Vire levemente o rosto para a ESQUERDA');
-        if (analysis.liveness.headDirection === 'LEFT') {
-          hasTurnedLeftRef.current = true;
-          challengeCompleted = true;
-        }
-      } else if (activeChallenge === 'TURN_HEAD_RIGHT') {
-        setLivenessFeedback('Vire levemente o rosto para a DIREITA');
-        if (analysis.liveness.headDirection === 'RIGHT') {
-          hasTurnedRightRef.current = true;
-          challengeCompleted = true;
-        }
-      } else if (activeChallenge === 'SMILE') {
-        setLivenessFeedback('Dê um breve sorriso');
-        if (analysis.liveness.isSmiling) {
-          hasSmiledRef.current = true;
-          challengeCompleted = true;
-        }
-      }
-
-      if (!challengeCompleted && progressRef.current < 85) {
-        progressRef.current = Math.min(75, progressRef.current + 5);
-        setProgress(progressRef.current);
-        setStatusText(`Desafio Antifraude: ${livenessFeedback}`);
-        return;
-      }
-
-      // 4. Etapa 3: Comparação Biométrica com Rede Neural ResNet-34 128D
-      setChallengeStep('STEP3_VERIFYING');
-      setStatusText('Validando identidade biométrica no servidor...');
-
+      // 2. Comparação Biométrica com a Rede Neural ResNet-34 (Embedding 128D)
       if (faceProfileRef.current?.embedding && analysis.descriptor) {
         const comparison = FaceEngine.compareBiometricEmbeddings(
           analysis.descriptor,
@@ -305,30 +229,38 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
 
         if (!comparison.matched) {
           setIsFaceValid(false);
-          progressRef.current = Math.max(0, progressRef.current - 25);
+          progressRef.current = Math.max(0, progressRef.current - 30);
           setProgress(progressRef.current);
           setStatusText('⚠️ Rosto não confere com o colaborador cadastrado!');
           return;
         }
       }
 
-      // 5. Biometria e Liveness Totalmente Aprovados
-      progressRef.current = 100;
-      setProgress(100);
-      isFinishedRef.current = true;
-      setStatusText('✓ Identidade Validada com Sucesso!');
-      setIsSuccessFlash(true);
+      // 3. Rosto Válido e Reconhecido: Avança progresso automaticamente
+      setIsFaceValid(true);
+      progressRef.current = Math.min(100, progressRef.current + 25);
+      setProgress(progressRef.current);
 
-      if (loopRef.current) {
-        clearInterval(loopRef.current);
-        loopRef.current = null;
+      if (progressRef.current < 50) {
+        setStatusText('Rosto identificado • Validando biometria...');
+      } else if (progressRef.current < 100) {
+        setStatusText(`Confirmando identidade (${progressRef.current}%)...`);
+      } else if (progressRef.current >= 100) {
+        isFinishedRef.current = true;
+        setStatusText('✓ Identidade Confirmada! Registrando ponto...');
+        setIsSuccessFlash(true);
+
+        if (loopRef.current) {
+          clearInterval(loopRef.current);
+          loopRef.current = null;
+        }
+
+        const snapshot = analysis.photoPreview || captureCanvasSnapshot();
+        setTimeout(() => {
+          executeServerVerification(analysis.descriptor || [], snapshot);
+        }, 300);
       }
-
-      const snapshot = analysis.photoPreview || captureCanvasSnapshot();
-      setTimeout(() => {
-        executeServerVerification(analysis.descriptor || [], snapshot);
-      }, 350);
-    }, 130);
+    }, 120);
   };
 
   const captureCanvasSnapshot = (): string => {
@@ -349,12 +281,12 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
   };
 
   /**
-   * Executa a submissão formal para o backend com token de sessão, GPS e embedding
+   * Submissão Server-Side do Ponto com Token de Sessão e GPS
    */
   const executeServerVerification = async (embedding: number[], photoPreview: string) => {
     if (isProcessing) return;
     setIsProcessing(true);
-    setStatusText('Processando registro seguro de ponto com GPS...');
+    setStatusText('Gravando registro com geolocalização GPS...');
 
     try {
       const location = await getCurrentGPSPosition();
@@ -363,11 +295,11 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
       const isOnline = navigator.onLine;
 
       if (!sessionRef.current) {
-        throw new Error('Sessão biométrica expirada ou inexistente. Reinicie a captura.');
+        throw new Error('Sessão biométrica expirada. Reinicie a captura.');
       }
 
       if (!isOnline) {
-        // Modo contingência offline
+        // Contingência Offline
         syncManager.enqueueOfflinePunch({
           idempotency_key: idempotencyKey,
           employee_id: employee.id,
@@ -382,7 +314,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           verification_score: 0.99,
         });
       } else {
-        // Envio server-side via RPC seguro
+        // RPC Seguro Server-Side
         const result = await dbService.submitBiometricPunch({
           verificationId: sessionRef.current.verificationId,
           sessionToken: sessionRef.current.sessionToken,
@@ -403,7 +335,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           throw new Error(result.error || 'Validação biométrica não autorizada pelo servidor.');
         }
 
-        // Se for o 1º ponto de um funcionário sem biometria prévia, grava o perfil
+        // Se for o 1º ponto de um funcionário sem biometria prévia, cadastra o perfil
         if (!faceProfileRef.current && embedding.length === 128) {
           await dbService.enrollBiometricProfile(employee.id, embedding, photoPreview, 0.99);
         }
@@ -422,7 +354,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           googleMapsUrl: location.googleMapsUrl || getGoogleMapsUrl(location.latitude, location.longitude),
           isOffline: !isOnline,
         });
-      }, 400);
+      }, 350);
     } catch (err: any) {
       console.error('[CameraPunchModal] Falha na validação do ponto:', err);
       setCameraState('error');
@@ -446,12 +378,12 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
             </div>
             <div>
               <h3 className="font-extrabold text-sm text-white flex items-center gap-1.5">
-                <span>CONTROLE DE ACESSO BIOMÉTRICO</span>
+                <span>VALIDAÇÃO BIOMÉTRICA</span>
                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/30">
-                  AI RESNET-34
+                  AUTOMÁTICA
                 </span>
               </h3>
-              <p className="text-[11px] text-zinc-400 font-medium">MP CARGAS — Validação Antifraude</p>
+              <p className="text-[11px] text-zinc-400 font-medium">MP CARGAS — Ponto Eletrônico</p>
             </div>
           </div>
           <button
@@ -462,7 +394,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           </button>
         </div>
 
-        {/* Área da Câmera com Moldura Circular e Feedback em Tempo Real */}
+        {/* Área da Câmera com Moldura Circular */}
         <div className="relative aspect-square w-full bg-black overflow-hidden flex items-center justify-center">
           
           {/* Elemento de Vídeo */}
@@ -500,7 +432,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
                       cy="50"
                       r="46"
                       className="transition-all duration-200 ease-out"
-                      stroke={progress >= 100 ? '#22C55E' : progress > 40 ? '#FFD100' : '#3B82F6'}
+                      stroke={progress >= 100 ? '#22C55E' : progress > 30 ? '#FFD100' : '#3B82F6'}
                       strokeWidth="5"
                       strokeLinecap="round"
                       fill="transparent"
@@ -523,26 +455,23 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
                 </div>
               </div>
 
-              {/* Tag de Desafio Liveness Ativo Topo */}
-              <div className="absolute top-3 inset-x-0 flex flex-col items-center gap-1.5 pointer-events-none z-20">
+              {/* Tag de Status Flutuante Topo */}
+              <div className="absolute top-3 inset-x-0 flex justify-center pointer-events-none z-20">
                 <div className={`px-4 py-1.5 rounded-full text-xs font-mono font-black backdrop-blur-md border transition-all flex items-center gap-2 ${
                   progress >= 100
                     ? 'bg-emerald-950/95 text-emerald-400 border-emerald-500/50'
-                    : progress >= 40
-                      ? 'bg-amber-950/95 text-[#FFD100] border-amber-500/50 shadow-lg'
+                    : isFaceValid
+                      ? 'bg-black/80 text-[#FFD100] border-[#FFD100]/40'
                       : 'bg-black/75 text-zinc-300 border-zinc-700'
                 }`}>
-                  {challengeStep === 'STEP1_ALIGN' && <Scan className="w-3.5 h-3.5 text-blue-400 animate-pulse" />}
-                  {challengeStep === 'STEP2_CHALLENGE' && currentChallenge === 'BLINK_EYES' && <Eye className="w-3.5 h-3.5 text-[#FFD100] animate-bounce" />}
-                  {challengeStep === 'STEP2_CHALLENGE' && (currentChallenge === 'TURN_HEAD_LEFT' || currentChallenge === 'TURN_HEAD_RIGHT') && <ArrowLeftRight className="w-3.5 h-3.5 text-[#FFD100] animate-pulse" />}
-                  {challengeStep === 'STEP2_CHALLENGE' && currentChallenge === 'SMILE' && <Smile className="w-3.5 h-3.5 text-[#FFD100]" />}
-                  {challengeStep === 'STEP3_VERIFYING' && <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />}
-
-                  <span>
-                    {challengeStep === 'STEP1_ALIGN' && '1. CENTRALIZAR ROSTO'}
-                    {challengeStep === 'STEP2_CHALLENGE' && `2. DESAFIO: ${livenessFeedback.toUpperCase()}`}
-                    {challengeStep === 'STEP3_VERIFYING' && '3. COMPARANDO EMBEDDINGS 128D'}
-                  </span>
+                  {progress >= 100 ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : isFaceValid ? (
+                    <Sparkles className="w-3.5 h-3.5 text-[#FFD100] animate-spin" />
+                  ) : (
+                    <Scan className="w-3.5 h-3.5 text-zinc-400 animate-pulse" />
+                  )}
+                  <span>{progress}% • {progress >= 100 ? 'VALIDADO' : isFaceValid ? 'ANALISANDO' : 'ENQUADRE'}</span>
                 </div>
               </div>
 
@@ -619,4 +548,6 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
     </div>
   );
 };
+
+
 

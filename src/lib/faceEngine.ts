@@ -8,28 +8,7 @@ export type BiometricStatus =
   | 'FACE_NOT_CENTERED'
   | 'POOR_LIGHTING'
   | 'QUALITY_OK'
-  | 'LIVENESS_CHALLENGE'
-  | 'LIVENESS_PASSED'
-  | 'EXTRACTING_EMBEDDING'
-  | 'MATCHING'
-  | 'APPROVED'
-  | 'REJECTED'
   | 'ERROR';
-
-export type LivenessChallengeType =
-  | 'LOOK_STRAIGHT'
-  | 'BLINK_EYES'
-  | 'TURN_HEAD_LEFT'
-  | 'TURN_HEAD_RIGHT'
-  | 'SMILE';
-
-export interface LivenessChallengeState {
-  currentChallenge: LivenessChallengeType;
-  instructions: string;
-  isCompleted: boolean;
-  stepNumber: number;
-  totalSteps: number;
-}
 
 export interface FaceAnalysisResult {
   status: BiometricStatus;
@@ -49,8 +28,7 @@ export interface FaceAnalysisResult {
     ear: number; // Eye Aspect Ratio
     yawRatio: number; // Head Pose Yaw
     isBlinking: boolean;
-    isSmiling: boolean;
-    headDirection: 'CENTER' | 'LEFT' | 'RIGHT';
+    isNatural: boolean;
   };
   errorMessage?: string;
 }
@@ -77,7 +55,6 @@ class FaceEngineService {
           faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
           faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
           faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-          faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
         ]);
 
         this.isLoaded = true;
@@ -99,6 +76,7 @@ class FaceEngineService {
 
   /**
    * Executa a inferência de visão computacional em tempo real sobre o elemento de vídeo.
+   * Totalmente automático: reconhece expressão normal/neutra sem exigir sorrisos ou gestos forçados.
    */
   public async analyzeLiveFrame(
     video: HTMLVideoElement,
@@ -111,7 +89,7 @@ class FaceEngineService {
         faceCount: 0,
         confidence: 0,
         quality: { brightness: 0, boxArea: 0, isCentered: false, isSharp: false },
-        liveness: { ear: 0, yawRatio: 1, isBlinking: false, isSmiling: false, headDirection: 'CENTER' },
+        liveness: { ear: 0, yawRatio: 1, isBlinking: false, isNatural: false },
         errorMessage: 'Aguardando inicialização das redes neurais...',
       };
     }
@@ -120,16 +98,15 @@ class FaceEngineService {
       // 1. Detecção Neural Real de Todos os Rostos no Frame (Rejeita mãos, paredes, objetos)
       const detectorOptions = new faceapi.TinyFaceDetectorOptions({
         inputSize: 320,
-        scoreThreshold: 0.55,
+        scoreThreshold: 0.52,
       });
 
       const detections = await faceapi
         .detectAllFaces(video, detectorOptions)
         .withFaceLandmarks()
-        .withFaceDescriptors()
-        .withFaceExpressions();
+        .withFaceDescriptors();
 
-      // Regra 1: Exatamente 1 rosto
+      // Regra 1: Exatamente 1 rosto humano
       if (detections.length === 0) {
         return {
           status: 'NO_FACE',
@@ -137,8 +114,8 @@ class FaceEngineService {
           faceCount: 0,
           confidence: 0,
           quality: { brightness: 0, boxArea: 0, isCentered: false, isSharp: false },
-          liveness: { ear: 0, yawRatio: 1, isBlinking: false, isSmiling: false, headDirection: 'CENTER' },
-          errorMessage: 'Nenhum rosto humano detectado. Posicione-se de frente para a câmera.',
+          liveness: { ear: 0, yawRatio: 1, isBlinking: false, isNatural: false },
+          errorMessage: 'Posicione o rosto dentro do círculo.',
         };
       }
 
@@ -149,8 +126,8 @@ class FaceEngineService {
           faceCount: detections.length,
           confidence: 0,
           quality: { brightness: 0, boxArea: 0, isCentered: false, isSharp: false },
-          liveness: { ear: 0, yawRatio: 1, isBlinking: false, isSmiling: false, headDirection: 'CENTER' },
-          errorMessage: 'Mais de 1 pessoa detectada! Apenas o colaborador deve estar no enquadramento.',
+          liveness: { ear: 0, yawRatio: 1, isBlinking: false, isNatural: false },
+          errorMessage: 'Mais de 1 pessoa detectada! Apenas o colaborador deve estar diante da câmera.',
         };
       }
 
@@ -170,12 +147,12 @@ class FaceEngineService {
       const centerY = box.y + box.height / 2;
       const centerDistX = Math.abs(centerX - videoW / 2) / videoW;
       const centerDistY = Math.abs(centerY - videoH / 2) / videoH;
-      const isCentered = centerDistX < 0.28 && centerDistY < 0.28;
+      const isCentered = centerDistX < 0.32 && centerDistY < 0.32;
 
       // Amostra de luminância
       const brightness = this.sampleLuminance(video, box);
 
-      if (minDimension < 110) {
+      if (minDimension < 100) {
         return {
           status: 'FACE_TOO_FAR',
           isFaceDetected: true,
@@ -183,7 +160,7 @@ class FaceEngineService {
           confidence,
           quality: { brightness, boxArea, isCentered, isSharp: true },
           landmarks,
-          liveness: { ear: 0, yawRatio: 1, isBlinking: false, isSmiling: false, headDirection: 'CENTER' },
+          liveness: { ear: 0, yawRatio: 1, isBlinking: false, isNatural: false },
           errorMessage: 'Aproxime-se mais da câmera.',
         };
       }
@@ -196,12 +173,12 @@ class FaceEngineService {
           confidence,
           quality: { brightness, boxArea, isCentered, isSharp: true },
           landmarks,
-          liveness: { ear: 0, yawRatio: 1, isBlinking: false, isSmiling: false, headDirection: 'CENTER' },
-          errorMessage: 'Centralize seu rosto dentro da moldura circular.',
+          liveness: { ear: 0, yawRatio: 1, isBlinking: false, isNatural: false },
+          errorMessage: 'Centralize seu rosto no círculo.',
         };
       }
 
-      if (brightness < 20) {
+      if (brightness < 18) {
         return {
           status: 'POOR_LIGHTING',
           isFaceDetected: true,
@@ -209,21 +186,16 @@ class FaceEngineService {
           confidence,
           quality: { brightness, boxArea, isCentered, isSharp: true },
           landmarks,
-          liveness: { ear: 0, yawRatio: 1, isBlinking: false, isSmiling: false, headDirection: 'CENTER' },
-          errorMessage: 'Ambiente muito escuro. Aproxime-se de uma fonte de luz.',
+          liveness: { ear: 0, yawRatio: 1, isBlinking: false, isNatural: false },
+          errorMessage: 'Ambiente com pouca luz. Aproxime-se de uma fonte de luz.',
         };
       }
 
-      // 3. Extração dos Índices de Liveness (Eye Aspect Ratio & Head Pose Yaw)
+      // 3. Extração dos Índices de Liveness Passivo (Proporção Facial e Landmarks 68D)
       const ear = this.computeEyeAspectRatio(landmarks);
-      const isBlinking = ear < 0.19;
-
+      const isBlinking = ear < 0.18;
       const yawRatio = this.computeYawRatio(landmarks);
-      let headDirection: 'CENTER' | 'LEFT' | 'RIGHT' = 'CENTER';
-      if (yawRatio > 1.65) headDirection = 'LEFT';
-      else if (yawRatio < 0.6) headDirection = 'RIGHT';
-
-      const isSmiling = (primaryDetection.expressions?.happy || 0) > 0.65;
+      const isNatural = yawRatio >= 0.55 && yawRatio <= 1.8;
 
       let photoPreview: string | undefined;
       if (options?.captureSnapshot) {
@@ -243,8 +215,7 @@ class FaceEngineService {
           ear,
           yawRatio,
           isBlinking,
-          isSmiling,
-          headDirection,
+          isNatural,
         },
       };
     } catch (err) {
@@ -255,7 +226,7 @@ class FaceEngineService {
         faceCount: 0,
         confidence: 0,
         quality: { brightness: 0, boxArea: 0, isCentered: false, isSharp: false },
-        liveness: { ear: 0, yawRatio: 1, isBlinking: false, isSmiling: false, headDirection: 'CENTER' },
+        liveness: { ear: 0, yawRatio: 1, isBlinking: false, isNatural: false },
         errorMessage: 'Erro no processamento da imagem.',
       };
     }
