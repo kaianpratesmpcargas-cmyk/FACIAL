@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Header } from './components/common/Header';
 import { InstallPwaBanner } from './components/common/InstallPwaBanner';
+import { SplashScreen } from './components/common/SplashScreen';
 import { EmployeeHome } from './components/employee/EmployeeHome';
 import { AdminLayout } from './components/admin/AdminLayout';
 import { LoginScreen } from './components/auth/LoginScreen';
@@ -17,6 +18,7 @@ interface AuthSession {
 const AUTH_STORAGE_KEY = 'mp_cargas_auth_session';
 
 export function App() {
+  const [showSplash, setShowSplash] = useState(true);
   const [authSession, setAuthSession] = useState<AuthSession | null>(() => {
     const saved = localStorage.getItem(AUTH_STORAGE_KEY);
     if (saved) {
@@ -83,6 +85,7 @@ export function App() {
   if (!authSession) {
     return (
       <div className="min-h-screen bg-[#111111] text-white flex flex-col font-sans">
+        {showSplash && <SplashScreen durationMs={1600} onFinish={() => setShowSplash(false)} />}
         <InstallPwaBanner />
         <LoginScreen onLoginSuccess={handleLoginSuccess} />
       </div>
@@ -91,6 +94,8 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-[#111111] text-white flex flex-col font-sans">
+      {/* Splash Screen Comemorativa MP CARGAS 30 ANOS (1.6s) */}
+      {showSplash && <SplashScreen durationMs={1600} onFinish={() => setShowSplash(false)} />}
       
       {/* Banner de Instalação PWA */}
       <InstallPwaBanner />

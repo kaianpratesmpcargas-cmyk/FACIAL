@@ -83,3 +83,36 @@ body {
 .animate-scan-line {
   animation: scan-line 2.2s ease-in-out infinite;
 }
+
+/* Animações da Tela Splash MP CARGAS 30 ANOS */
+@keyframes splash-glow {
+  0% {
+    opacity: 0.3;
+    transform: scale(0.95);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 0.3;
+    transform: scale(0.95);
+  }
+}
+
+.animate-splash-glow {
+  animation: splash-glow 1.6s ease-in-out infinite;
+}
+
+@keyframes gold-sheen {
+  0% {
+    transform: translateX(-150%) skewX(-20deg);
+  }
+  100% {
+    transform: translateX(250%) skewX(-20deg);
+  }
+}
+
+.animate-gold-sheen {
+  animation: gold-sheen 1.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
