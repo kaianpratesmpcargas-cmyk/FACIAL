@@ -208,7 +208,7 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
           </button>
         </div>
 
-        {/* Área da Câmera com Scanner Circular */}
+        {/* Área da Câmera com Scanner Circular e Máscara SVG Cristalina */}
         <div className="relative aspect-square w-full bg-black overflow-hidden flex items-center justify-center">
           
           <video
@@ -217,13 +217,34 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
             playsInline
             muted
             className={`w-full h-full object-cover scale-x-[-1] ${cameraState === 'active' ? 'block' : 'hidden'}`}
+            style={{ filter: 'none', opacity: 1 }}
           />
 
           {cameraState === 'active' && (
             <>
-              {/* Máscara Escura com Abertura Circular */}
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-full shadow-[0_0_0_9999px_rgba(0,0,0,0.72)] flex items-center justify-center">
+              {/* Máscara SVG com Recorte Circular 100% Transparente no Centro */}
+              <svg
+                className="absolute inset-0 w-full h-full pointer-events-none z-10"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+              >
+                <defs>
+                  <mask id="enroll-camera-mask">
+                    <rect width="100" height="100" fill="white" />
+                    <circle cx="50" cy="50" r="37" fill="black" />
+                  </mask>
+                </defs>
+                <rect
+                  width="100"
+                  height="100"
+                  fill="rgba(0, 0, 0, 0.65)"
+                  mask="url(#enroll-camera-mask)"
+                />
+              </svg>
+
+              {/* Moldura Circular e Anel de Progresso */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+                <div className="relative w-64 h-64 sm:w-72 sm:h-72 flex items-center justify-center">
                   
                   {/* Anel de Progresso SVG */}
                   <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 100 100">
@@ -231,8 +252,8 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
                       cx="50"
                       cy="50"
                       r="46"
-                      className="stroke-zinc-800/80"
-                      strokeWidth="4"
+                      className="stroke-zinc-700/50"
+                      strokeWidth="3.5"
                       fill="transparent"
                     />
                     <circle
@@ -241,7 +262,7 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
                       r="46"
                       className="transition-all duration-200 ease-out"
                       stroke={progress >= 100 ? '#22C55E' : progress > 30 ? '#FFD100' : '#3B82F6'}
-                      strokeWidth="5"
+                      strokeWidth="4.5"
                       strokeLinecap="round"
                       fill="transparent"
                       strokeDasharray="289"
@@ -250,11 +271,11 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
                   </svg>
 
                   {progress < 100 && (
-                    <div className="absolute left-6 right-6 h-0.5 bg-gradient-to-r from-transparent via-[#22C55E] to-transparent shadow-[0_0_12px_#22C55E] animate-scan-line" />
+                    <div className="absolute left-6 right-6 h-0.5 bg-gradient-to-r from-transparent via-[#22C55E] to-transparent shadow-[0_0_10px_#22C55E] animate-scan-line" />
                   )}
 
                   {progress >= 100 && (
-                    <div className="w-16 h-16 rounded-full bg-emerald-500/90 text-black flex items-center justify-center animate-scaleUp shadow-2xl">
+                    <div className="w-16 h-16 rounded-full bg-emerald-500 text-black flex items-center justify-center animate-scaleUp shadow-2xl">
                       <CheckCircle className="w-10 h-10 text-black stroke-[2.5]" />
                     </div>
                   )}

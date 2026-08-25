@@ -55,7 +55,6 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
   const [isFaceValid, setIsFaceValid] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [isSuccessFlash, setIsSuccessFlash] = useState(false);
 
   const progressRef = useRef(0);
   const isFinishedRef = useRef(false);
@@ -248,7 +247,6 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
       } else if (progressRef.current >= 100) {
         isFinishedRef.current = true;
         setStatusText('✓ Identidade Confirmada! Registrando ponto...');
-        setIsSuccessFlash(true);
 
         if (loopRef.current) {
           clearInterval(loopRef.current);
@@ -394,28 +392,47 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           </button>
         </div>
 
-        {/* Área da Câmera com Moldura Circular */}
+        {/* Área da Câmera com Moldura Circular e Máscara SVG Cristalina */}
         <div className="relative aspect-square w-full bg-black overflow-hidden flex items-center justify-center">
           
-          {/* Elemento de Vídeo */}
+          {/* Elemento de Vídeo com 100% de nitidez e iluminação natural */}
           <video
             ref={videoRef}
             autoPlay
             playsInline
             muted
             className={`w-full h-full object-cover scale-x-[-1] ${cameraState === 'active' ? 'block' : 'hidden'}`}
+            style={{ filter: 'none', opacity: 1 }}
           />
-
-          {/* Flash visual de aprovação */}
-          {isSuccessFlash && (
-            <div className="absolute inset-0 bg-white/85 animate-fadeOut pointer-events-none z-30" />
-          )}
 
           {cameraState === 'active' && (
             <>
-              {/* Máscara Escura com Abertura Circular */}
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-full shadow-[0_0_0_9999px_rgba(0,0,0,0.72)] flex items-center justify-center">
+              {/* Máscara SVG com Recorte Circular 100% Transparente no Centro */}
+              <svg
+                className="absolute inset-0 w-full h-full pointer-events-none z-10"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+              >
+                <defs>
+                  <mask id="biometric-camera-mask">
+                    {/* Fundo Branco = Área escurecida ao redor */}
+                    <rect width="100" height="100" fill="white" />
+                    {/* Círculo Preto = Abertura 100% Transparente e Nítida para o Vídeo */}
+                    <circle cx="50" cy="50" r="37" fill="black" />
+                  </mask>
+                </defs>
+                {/* Camada de escurecimento suave (60% de opacidade) apenas fora do círculo */}
+                <rect
+                  width="100"
+                  height="100"
+                  fill="rgba(0, 0, 0, 0.65)"
+                  mask="url(#biometric-camera-mask)"
+                />
+              </svg>
+
+              {/* Moldura Circular e Anel de Progresso */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+                <div className="relative w-64 h-64 sm:w-72 sm:h-72 flex items-center justify-center">
                   
                   {/* Anel de Progresso SVG */}
                   <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 100 100">
@@ -423,8 +440,8 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
                       cx="50"
                       cy="50"
                       r="46"
-                      className="stroke-zinc-800/80"
-                      strokeWidth="4"
+                      className="stroke-zinc-700/50"
+                      strokeWidth="3.5"
                       fill="transparent"
                     />
                     <circle
@@ -432,8 +449,14 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
                       cy="50"
                       r="46"
                       className="transition-all duration-200 ease-out"
-                      stroke={progress >= 100 ? '#22C55E' : progress > 30 ? '#FFD100' : '#3B82F6'}
-                      strokeWidth="5"
+                      stroke={
+                        progress >= 100
+                          ? '#22C55E'
+                          : !isFaceValid && progress === 0
+                            ? '#71717A'
+                            : '#FFD100'
+                      }
+                      strokeWidth="4.5"
                       strokeLinecap="round"
                       fill="transparent"
                       strokeDasharray="289"
@@ -442,8 +465,8 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
                   </svg>
 
                   {/* Linha de Scanner Animada */}
-                  {progress < 100 && (
-                    <div className="absolute left-6 right-6 h-0.5 bg-gradient-to-r from-transparent via-[#22C55E] to-transparent shadow-[0_0_12px_#22C55E] animate-scan-line" />
+                  {progress < 100 && isFaceValid && (
+                    <div className="absolute left-6 right-6 h-0.5 bg-gradient-to-r from-transparent via-[#22C55E] to-transparent shadow-[0_0_10px_#22C55E] animate-scan-line" />
                   )}
 
                   {/* Indicador Central de Conclusão */}
@@ -456,13 +479,13 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
               </div>
 
               {/* Tag de Status Flutuante Topo */}
-              <div className="absolute top-3 inset-x-0 flex justify-center pointer-events-none z-20">
+              <div className="absolute top-3 inset-x-0 flex justify-center pointer-events-none z-30">
                 <div className={`px-4 py-1.5 rounded-full text-xs font-mono font-black backdrop-blur-md border transition-all flex items-center gap-2 ${
                   progress >= 100
-                    ? 'bg-emerald-950/95 text-emerald-400 border-emerald-500/50'
+                    ? 'bg-emerald-950/95 text-emerald-400 border-emerald-500/50 shadow-lg shadow-emerald-900/30'
                     : isFaceValid
-                      ? 'bg-black/80 text-[#FFD100] border-[#FFD100]/40'
-                      : 'bg-black/75 text-zinc-300 border-zinc-700'
+                      ? 'bg-black/90 text-[#FFD100] border-[#FFD100]/50 shadow-lg'
+                      : 'bg-black/85 text-zinc-300 border-zinc-700'
                 }`}>
                   {progress >= 100 ? (
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
@@ -476,7 +499,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
               </div>
 
               {/* Barra de Instrução Dinâmica Rodapé da Câmera */}
-              <div className="absolute bottom-4 left-4 right-4 bg-[#111111]/95 backdrop-blur border border-[#333333] py-3 px-4 rounded-2xl flex items-center gap-3 shadow-xl z-20">
+              <div className="absolute bottom-4 left-4 right-4 bg-[#111111]/95 backdrop-blur border border-[#333333] py-3 px-4 rounded-2xl flex items-center gap-3 shadow-xl z-30">
                 {isProcessing ? (
                   <RefreshCw className="w-5 h-5 text-[#FFD100] animate-spin shrink-0" />
                 ) : progress >= 100 ? (
@@ -497,7 +520,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           )}
 
           {cameraState === 'requesting' && (
-            <div className="flex flex-col items-center gap-3 p-6 text-center">
+            <div className="flex flex-col items-center gap-3 p-6 text-center z-10">
               <div className="w-14 h-14 rounded-full bg-[#242424] flex items-center justify-center text-[#22C55E] animate-spin">
                 <Camera className="w-7 h-7" />
               </div>
@@ -507,7 +530,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
           )}
 
           {cameraState === 'error' && (
-            <div className="flex flex-col items-center gap-3 p-6 text-center">
+            <div className="flex flex-col items-center gap-3 p-6 text-center z-10">
               <div className="w-14 h-14 rounded-full bg-red-950/80 border border-red-500/40 flex items-center justify-center text-red-400">
                 <ShieldAlert className="w-7 h-7" />
               </div>
