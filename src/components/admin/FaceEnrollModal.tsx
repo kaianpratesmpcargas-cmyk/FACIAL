@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, X, CheckCircle, ShieldCheck, AlertCircle, Scan, Lock } from 'lucide-react';
+import { Camera, X, CheckCircle, ShieldCheck, AlertCircle, Scan, Lock, AlertTriangle } from 'lucide-react';
 import type { Employee } from '../../types';
 import { FaceEngine } from '../../lib/faceEngine';
 import { dbService } from '../../lib/supabase';
@@ -19,9 +19,12 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const loopRef = useRef<number | null>(null);
 
   const [cameraState, setCameraState] = useState<'requesting' | 'active' | 'error'>('requesting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isFaceDetected, setIsFaceDetected] = useState(false);
+  const [liveFeedback, setLiveFeedback] = useState('Centralize o rosto no enquadramento...');
   const [isCapturing, setIsCapturing] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [capturedPreview, setCapturedPreview] = useState<string | null>(null);
@@ -30,43 +33,19 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
     if (isOpen) {
       startCamera();
     } else {
-      stopCamera();
+      cleanup();
     }
 
     return () => {
-      stopCamera();
+      cleanup();
     };
   }, [isOpen]);
 
-  const startCamera = async () => {
-    setCameraState('requesting');
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    setCapturedPreview(null);
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'user',
-          width: { ideal: 640 },
-          height: { ideal: 640 },
-        },
-      });
-
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-      setCameraState('active');
-    } catch (err: any) {
-      console.warn('Erro ao inicializar câmera:', err);
-      setCameraState('error');
-      setErrorMessage('Não foi possível acessar a câmera frontal. Conceda permissão no navegador.');
+  const cleanup = () => {
+    if (loopRef.current) {
+      clearInterval(loopRef.current);
+      loopRef.current = null;
     }
-  };
-
-  const stopCamera = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -76,32 +55,87 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
     }
   };
 
+  const startCamera = async () => {
+    setCameraState('requesting');
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setCapturedPreview(null);
+    setIsFaceDetected(false);
+    setLiveFeedback('Centralize o rosto no enquadramento...');
+
+    try {
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: 640 },
+            height: { ideal: 640 },
+          },
+          audio: false,
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
+
+      streamRef.current = stream;
+      if (videoRef.current) {
+        const video = videoRef.current;
+        video.srcObject = stream;
+        video.setAttribute('playsinline', 'true');
+        video.muted = true;
+        
+        video.onloadedmetadata = () => {
+          video.play().catch(console.error);
+          setCameraState('active');
+          startEnrollDetectionLoop();
+        };
+      }
+    } catch (err: any) {
+      console.warn('Erro ao inicializar câmera:', err);
+      setCameraState('error');
+      setErrorMessage('Não foi possível acessar a câmera frontal. Conceda permissão no navegador.');
+    }
+  };
+
+  const startEnrollDetectionLoop = () => {
+    if (loopRef.current) clearInterval(loopRef.current);
+
+    loopRef.current = window.setInterval(() => {
+      if (!videoRef.current || isCapturing) return;
+
+      const analysis = FaceEngine.analyzeLiveFrame(videoRef.current);
+      setIsFaceDetected(analysis.isFaceDetected);
+
+      if (!analysis.isFaceDetected) {
+        setLiveFeedback(analysis.errorMessage || 'Enquadre o rosto completo (olhos e boca visíveis).');
+      } else {
+        setLiveFeedback('✓ Rosto perfeitamente enquadrado! Clique no botão para gravar.');
+      }
+    }, 150);
+  };
+
   const handleCaptureAndEnroll = async () => {
-    if (isCapturing) return;
+    if (isCapturing || !videoRef.current) return;
     setIsCapturing(true);
     setErrorMessage(null);
 
     try {
-      let descriptor: number[] = [];
-      let photoPreview: string | undefined = undefined;
+      const analysis = FaceEngine.analyzeLiveFrame(videoRef.current);
 
-      if (videoRef.current) {
-        const faceData = FaceEngine.extractFaceData(videoRef.current);
-        if (faceData) {
-          descriptor = faceData.descriptor;
-          photoPreview = faceData.photoPreview;
-          setCapturedPreview(faceData.photoPreview);
-        }
+      if (!analysis.isFaceDetected) {
+        setErrorMessage(analysis.errorMessage || 'Nenhum rosto válido detectado. Posicione-se em frente à câmera.');
+        setIsCapturing(false);
+        return;
       }
 
-      if (descriptor.length === 0) {
-        descriptor = Array.from({ length: 64 }, () => Number((Math.random() * 2 - 1).toFixed(4)));
-      }
+      setCapturedPreview(analysis.photoPreview);
+      await dbService.saveFaceProfile(employee.id, analysis.descriptor, analysis.photoPreview);
 
-      await dbService.saveFaceProfile(employee.id, descriptor, photoPreview);
-      setSuccessMessage(`Biometria cadastrada para ${employee.full_name}! Template gravado para conferência de ponto.`);
+      setSuccessMessage(`1º Scan gravado com sucesso para ${employee.full_name}! Foto de referência e biometria cadastradas.`);
       
       setTimeout(() => {
+        cleanup();
         onEnrolled();
         onClose();
       }, 1400);
@@ -139,18 +173,21 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
 
         {/* Área da Câmera com Enquadramento */}
         <div className="relative aspect-square w-full bg-black overflow-hidden flex items-center justify-center">
+          
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className={`w-full h-full object-cover scale-x-[-1] ${cameraState === 'active' ? 'block' : 'hidden'}`}
+          />
+
           {cameraState === 'active' && (
             <>
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover scale-x-[-1]"
-              />
-
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-60 h-72 rounded-[50%] border-4 border-[#FFD100] shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] flex items-center justify-center relative overflow-hidden">
+                <div className={`w-60 h-72 rounded-[50%] border-4 shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] flex items-center justify-center relative overflow-hidden transition-colors ${
+                  isFaceDetected ? 'border-[#22C55E]' : 'border-[#FFD100]'
+                }`}>
                   <div className="absolute left-0 right-0 h-1 bg-[#22C55E] shadow-[0_0_12px_#22C55E] animate-scan-line" />
                 </div>
               </div>
@@ -160,6 +197,18 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
                   <img src={capturedPreview} alt="Captura" className="w-full h-full object-cover" />
                 </div>
               )}
+
+              {/* Feedback em Tempo Real */}
+              <div className="absolute bottom-4 left-4 right-4 bg-[#111111]/95 backdrop-blur border border-[#333333] py-2.5 px-4 rounded-2xl flex items-center gap-2.5 shadow-xl">
+                {isFaceDetected ? (
+                  <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+                )}
+                <span className={`text-xs font-bold tracking-wide truncate ${isFaceDetected ? 'text-emerald-400' : 'text-amber-300'}`}>
+                  {liveFeedback}
+                </span>
+              </div>
             </>
           )}
 
@@ -175,10 +224,10 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
               <AlertCircle className="w-8 h-8 mx-auto text-amber-400" />
               <p>{errorMessage}</p>
               <button
-                onClick={handleCaptureAndEnroll}
+                onClick={startCamera}
                 className="mt-2 py-2 px-4 rounded-xl bg-[#FFD100] text-black font-bold cursor-pointer"
               >
-                Gerar Template Biométrico no Dispositivo
+                Tentar Novamente
               </button>
             </div>
           )}
@@ -190,7 +239,7 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
           <div className="p-3 rounded-xl bg-[#1C1C1C] border border-[#2B2B2B] flex items-start gap-2.5 text-[11px] text-zinc-400">
             <Lock className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
             <span>
-              <b className="text-zinc-200">Foto de Referência:</b> Este 1º scan será a base oficial de comparação. Sempre que o colaborador registrar ponto, o sistema comparará a face ao vivo com esta captura.
+              <b className="text-zinc-200">Foto de Referência Oficial:</b> Este 1º scan é a foto base. Quando o colaborador for bater ponto, o sistema exigirá um rosto real e conferirá se bate com esta foto.
             </span>
           </div>
 
@@ -210,11 +259,15 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
             </button>
             <button
               onClick={handleCaptureAndEnroll}
-              disabled={isCapturing}
-              className="flex-1 py-3 rounded-xl bg-[#FFD100] hover:bg-[#E6BC00] text-black font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-[#FFD100]/20 transition-all cursor-pointer"
+              disabled={isCapturing || !isFaceDetected}
+              className={`flex-1 py-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all ${
+                isFaceDetected
+                  ? 'bg-[#FFD100] hover:bg-[#E6BC00] text-black shadow-[#FFD100]/20 cursor-pointer'
+                  : 'bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed opacity-75'
+              }`}
             >
-              <ShieldCheck className="w-4 h-4 text-black" />
-              <span>{isCapturing ? 'Processando...' : 'Gravar Foto & Template'}</span>
+              <ShieldCheck className={`w-4 h-4 ${isFaceDetected ? 'text-black' : 'text-zinc-500'}`} />
+              <span>{isCapturing ? 'Gravando...' : 'Gravar Foto & Template'}</span>
             </button>
           </div>
         </div>

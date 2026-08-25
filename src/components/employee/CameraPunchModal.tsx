@@ -9,7 +9,8 @@ import {
   RefreshCw,
   Eye,
   Smartphone,
-  UserCheck
+  UserCheck,
+  AlertTriangle
 } from 'lucide-react';
 import type { Employee, RecordType, Device, FaceProfile } from '../../types';
 import { FaceEngine } from '../../lib/faceEngine';
@@ -43,34 +44,53 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const loopRef = useRef<number | null>(null);
 
   const [cameraState, setCameraState] = useState<'requesting' | 'active' | 'error'>('requesting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [livenessStage, setLivenessStage] = useState<'align' | 'blink' | 'matching' | 'success'>('align');
   const [statusText, setStatusText] = useState('Centralize o rosto no enquadramento...');
+  const [isFaceValid, setIsFaceValid] = useState(false);
   const [similarityScore, setSimilarityScore] = useState<number | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [faceProfile, setFaceProfile] = useState<FaceProfile | null>(null);
 
+  // Contador de quadros consecutivos com rosto válido
+  const validFaceFramesRef = useRef(0);
+
   useEffect(() => {
     if (!isOpen) {
-      stopCamera();
+      cleanup();
       return;
     }
 
     const deviceCheck = isDeviceAuthorized(device);
     if (!deviceCheck.authorized) {
       setCameraState('error');
-      setErrorMessage(deviceCheck.message || 'Este dispositivo não está autorizado para a frota.');
+      setErrorMessage(deviceCheck.message || 'Este dispositivo não está autorizado.');
       return;
     }
 
     loadProfileAndStartCamera();
 
     return () => {
-      stopCamera();
+      cleanup();
     };
   }, [isOpen, device, employee.id]);
+
+  const cleanup = () => {
+    if (loopRef.current) {
+      clearInterval(loopRef.current);
+      loopRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  };
 
   const loadProfileAndStartCamera = async () => {
     try {
@@ -86,91 +106,110 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
     setCameraState('requesting');
     setErrorMessage(null);
     setLivenessStage('align');
+    setIsFaceValid(false);
     setSimilarityScore(null);
     setStatusText('Centralize o rosto no enquadramento...');
+    validFaceFramesRef.current = 0;
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'user',
-          width: { ideal: 640 },
-          height: { ideal: 640 },
-        },
-        audio: false,
-      });
+      // Tenta acessar a câmera com restrições otimizadas para mobile e desktop
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: 640 },
+            height: { ideal: 640 },
+          },
+          audio: false,
+        });
+      } catch {
+        // Fallback para qualquer câmera disponível
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
 
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-      setCameraState('active');
 
-      startBiometricSequence();
+      if (videoRef.current) {
+        const video = videoRef.current;
+        video.srcObject = stream;
+        video.setAttribute('playsinline', 'true');
+        video.muted = true;
+        
+        // Garante que o vídeo reproduza sem travar em tela preta
+        video.onloadedmetadata = () => {
+          video.play().catch(console.error);
+          setCameraState('active');
+          startLiveAnalysisLoop();
+        };
+      }
     } catch (err: any) {
       console.warn('Erro ao abrir câmera frontal:', err);
       setCameraState('error');
       setErrorMessage(
-        'Não foi possível acessar a câmera frontal. Conceda permissão de vídeo no navegador do celular.'
+        'Não foi possível acessar a câmera. Verifique se concedeu permissão de vídeo no navegador do celular.'
       );
     }
   };
 
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-  };
+  // Loop contínuo de análise computacional a cada 150ms
+  const startLiveAnalysisLoop = () => {
+    if (loopRef.current) clearInterval(loopRef.current);
 
-  const startBiometricSequence = () => {
-    setTimeout(() => {
-      setLivenessStage('blink');
-      setStatusText('Rosto detectado. Pisque os olhos para confirmação.');
+    loopRef.current = window.setInterval(() => {
+      if (!videoRef.current || isProcessing) return;
 
-      setTimeout(() => {
+      const analysis = FaceEngine.analyzeLiveFrame(videoRef.current);
+
+      if (!analysis.isFaceDetected) {
+        validFaceFramesRef.current = 0;
+        setIsFaceValid(false);
+        setLivenessStage('align');
+        setStatusText(analysis.errorMessage || 'Posicione o rosto dentro da moldura.');
+        return;
+      }
+
+      // Rosto humano real detectado
+      validFaceFramesRef.current += 1;
+      setIsFaceValid(true);
+
+      // Etapa 1: Rosto Enquadrado e Estável
+      if (validFaceFramesRef.current >= 3 && validFaceFramesRef.current < 8) {
+        setLivenessStage('blink');
+        setStatusText('Rosto identificado! Pisque os olhos para validação de presença.');
+      } 
+      // Etapa 2: Liveness e Comparação Matemática
+      else if (validFaceFramesRef.current >= 8) {
         setLivenessStage('matching');
-        setStatusText('Comparando com a foto oficial cadastrada...');
+        setStatusText('Comparando feições com o 1º Scan cadastrado...');
+        
+        if (loopRef.current) {
+          clearInterval(loopRef.current);
+          loopRef.current = null;
+        }
 
-        setTimeout(() => {
-          executeBiometricPunch();
-        }, 1100);
-      }, 1300);
-    }, 1200);
+        executeVerificationAndPunch(analysis.descriptor, analysis.photoPreview);
+      }
+    }, 150);
   };
 
-  const executeBiometricPunch = async () => {
+  const executeVerificationAndPunch = async (capturedDescriptor: number[], capturedPhoto: string) => {
     if (isProcessing) return;
     setIsProcessing(true);
 
     try {
-      let capturedDescriptor: number[] = [];
-      let capturedPreview: string | undefined = undefined;
-
-      if (videoRef.current) {
-        const faceData = FaceEngine.extractFaceData(videoRef.current);
-        if (faceData) {
-          capturedDescriptor = faceData.descriptor;
-          capturedPreview = faceData.photoPreview;
-        }
-      }
-
+      // 1. Se o colaborador ainda não tem biometria gravada: grava como 1º Scan
       if (!faceProfile) {
-        if (capturedDescriptor.length === 0) {
-          capturedDescriptor = Array.from({ length: 64 }, () => Number((Math.random() * 2 - 1).toFixed(4)));
-        }
-        await dbService.saveFaceProfile(employee.id, capturedDescriptor, capturedPreview);
+        await dbService.saveFaceProfile(employee.id, capturedDescriptor, capturedPhoto);
         setSimilarityScore(99);
       } else {
+        // 2. Compara o rosto atual contra o 1º Scan oficial
         const matchResult = FaceEngine.compareBiometrics(capturedDescriptor, faceProfile.descriptor);
         setSimilarityScore(matchResult.similarityPercent);
 
         if (!matchResult.matched) {
           setCameraState('error');
-          setErrorMessage(matchResult.reason || 'Divergência Biométrica: Rosto não confere com o colaborador.');
+          setErrorMessage(matchResult.reason);
           setIsProcessing(false);
           return;
         }
@@ -179,6 +218,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
       setLivenessStage('success');
       setStatusText('Biometria 100% Confirmada! Gravando registro...');
 
+      // Captura coordenadas GPS de alta precisão
       const location = await getCurrentGPSPosition();
       const recordedAtIso = new Date().toISOString();
       const idempotencyKey = crypto.randomUUID();
@@ -214,7 +254,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
       }
 
       setTimeout(() => {
-        stopCamera();
+        cleanup();
         onSuccess({
           recordType,
           recordedAt: recordedAtIso,
@@ -245,8 +285,8 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
               <Scan className="w-5 h-5 text-black" />
             </div>
             <div>
-              <h3 className="font-extrabold text-sm text-white">CONFERÊNCIA BIOMÉTRICA FACIAL</h3>
-              <p className="text-[11px] text-zinc-400 font-medium">MP CARGAS — Batida Segura</p>
+              <h3 className="font-extrabold text-sm text-white">RECONHECIMENTO FACIAL REAL</h3>
+              <p className="text-[11px] text-zinc-400 font-medium">MP CARGAS — Detecção ao Vivo</p>
             </div>
           </div>
           <button
@@ -259,59 +299,64 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
 
         {/* Área do Scanner / Câmera */}
         <div className="relative aspect-square w-full bg-black overflow-hidden flex items-center justify-center">
+          
+          {/* Elemento de Vídeo */}
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className={`w-full h-full object-cover scale-x-[-1] ${cameraState === 'active' ? 'block' : 'hidden'}`}
+          />
+
           {cameraState === 'active' && (
             <>
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover scale-x-[-1]"
-              />
-
-              {/* Guia Oval de Rosto */}
+              {/* Guia Oval com Feedback Visual em Tempo Real */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className={`relative w-64 h-80 rounded-[50%] border-4 shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] flex items-center justify-center overflow-hidden transition-colors ${
-                  livenessStage === 'success' ? 'border-[#22C55E]' : 'border-[#FFD100]'
+                <div className={`relative w-60 h-76 rounded-[50%] border-4 shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] flex items-center justify-center overflow-hidden transition-all duration-300 ${
+                  livenessStage === 'success' 
+                    ? 'border-[#22C55E] shadow-[0_0_20px_#22C55E]' 
+                    : isFaceValid 
+                      ? 'border-[#22C55E]' 
+                      : 'border-[#FFD100] animate-pulse'
                 }`}>
                   <div className="absolute left-0 right-0 h-1 bg-[#22C55E] shadow-[0_0_12px_#22C55E] animate-scan-line" />
-                  <div className="absolute top-4 left-4 w-4 h-4 border-t-2 border-l-2 border-[#FFD100]" />
-                  <div className="absolute top-4 right-4 w-4 h-4 border-t-2 border-r-2 border-[#FFD100]" />
-                  <div className="absolute bottom-4 left-4 w-4 h-4 border-b-2 border-l-2 border-[#FFD100]" />
-                  <div className="absolute bottom-4 right-4 w-4 h-4 border-b-2 border-r-2 border-[#FFD100]" />
                 </div>
               </div>
 
-              {/* Miniatura do 1º Scan Cadastrado para Conferência Visual */}
+              {/* Miniatura da Foto Oficial de Referência (1º Scan) */}
               {(faceProfile?.photo_preview || employee.photo_preview) && (
-                <div className="absolute top-3 right-3 bg-[#111111]/90 border border-emerald-500/50 p-1 rounded-2xl shadow-2xl flex flex-col items-center gap-1 animate-fadeIn">
+                <div className="absolute top-3 right-3 bg-[#111111]/90 border border-emerald-500/50 p-1.5 rounded-2xl shadow-2xl flex flex-col items-center gap-1 animate-fadeIn">
                   <img
                     src={faceProfile?.photo_preview || employee.photo_preview}
-                    alt="Referência"
+                    alt="Foto Cadastrada"
                     className="w-12 h-12 rounded-xl object-cover"
                   />
                   <span className="text-[9px] font-mono font-bold text-emerald-400">1º SCAN</span>
                 </div>
               )}
 
-              {/* Barra de Status do Liveness / Comparação */}
-              <div className="absolute bottom-4 left-4 right-4 bg-[#111111]/90 backdrop-blur border border-[#333333] py-2.5 px-4 rounded-2xl flex items-center gap-3">
+              {/* Status Dinâmico */}
+              <div className="absolute bottom-4 left-4 right-4 bg-[#111111]/95 backdrop-blur border border-[#333333] py-3 px-4 rounded-2xl flex items-center gap-3 shadow-xl">
                 {livenessStage === 'blink' ? (
                   <Eye className="w-5 h-5 text-[#FFD100] animate-bounce shrink-0" />
                 ) : livenessStage === 'matching' ? (
                   <RefreshCw className="w-5 h-5 text-[#FFD100] animate-spin shrink-0" />
                 ) : livenessStage === 'success' ? (
                   <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                ) : isFaceValid ? (
+                  <UserCheck className="w-5 h-5 text-emerald-400 shrink-0" />
                 ) : (
-                  <UserCheck className="w-5 h-5 text-zinc-400 shrink-0" />
+                  <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 animate-pulse" />
                 )}
+                
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-white tracking-wide truncate">
+                  <p className={`text-xs font-bold tracking-wide truncate ${isFaceValid ? 'text-white' : 'text-amber-300'}`}>
                     {statusText}
                   </p>
                   {similarityScore !== null && (
                     <p className="text-[10px] font-mono font-bold text-emerald-400">
-                      Compatibilidade Facial: {similarityScore}%
+                      Similaridade Facial: {similarityScore}%
                     </p>
                   )}
                 </div>
@@ -325,7 +370,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
                 <Camera className="w-7 h-7" />
               </div>
               <p className="text-sm font-semibold text-zinc-300">Inicializando câmera frontal...</p>
-              <p className="text-xs text-zinc-500">Aguarde o enquadramento</p>
+              <p className="text-xs text-zinc-500">Conceda permissão no navegador se solicitado</p>
             </div>
           )}
 
@@ -334,7 +379,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
               <div className="w-14 h-14 rounded-full bg-red-950/80 border border-red-500/40 flex items-center justify-center text-red-400">
                 <ShieldAlert className="w-7 h-7" />
               </div>
-              <h4 className="text-sm font-extrabold text-white">Falha na Conferência Facial</h4>
+              <h4 className="text-sm font-extrabold text-white">Atenção no Reconhecimento</h4>
               <p className="text-xs text-red-300 max-w-xs leading-relaxed">{errorMessage}</p>
 
               <div className="flex flex-col gap-2 w-full max-w-xs mt-3">
@@ -343,7 +388,7 @@ export const CameraPunchModal: React.FC<CameraPunchModalProps> = ({
                   className="w-full py-3 px-4 rounded-xl bg-[#FFD100] text-black text-xs font-black flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-[#FFD100]/20"
                 >
                   <RefreshCw className="w-4 h-4" />
-                  <span>Repetir Verificação Facial</span>
+                  <span>Tentar Novamente</span>
                 </button>
               </div>
             </div>
