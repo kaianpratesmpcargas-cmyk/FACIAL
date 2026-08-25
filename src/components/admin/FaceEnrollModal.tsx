@@ -132,13 +132,15 @@ export const FaceEnrollModal: React.FC<FaceEnrollModalProps> = ({
       setCapturedPreview(analysis.photoPreview);
       await dbService.saveFaceProfile(employee.id, analysis.descriptor, analysis.photoPreview);
 
+      // Notifica o componente pai imediatamente
+      onEnrolled();
+
       setSuccessMessage(`1º Scan gravado com sucesso para ${employee.full_name}! Foto de referência e biometria cadastradas.`);
       
       setTimeout(() => {
         cleanup();
-        onEnrolled();
         onClose();
-      }, 1400);
+      }, 1000);
     } catch (err: any) {
       setErrorMessage(err?.message || 'Erro ao gravar biometria.');
     } finally {

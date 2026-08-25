@@ -60,24 +60,31 @@ export const dbService = {
   },
 
   async getEmployees(): Promise<Employee[]> {
+    const localFaces = getStored<FaceProfile>(STORAGE_KEYS.FACE_PROFILES, INITIAL_FACE_PROFILES);
+
     if (isSupabaseConfigured && supabase) {
-      const { data: emps, error: empErr } = await supabase.from('employees').select('*').order('full_name');
-      const { data: faces } = await supabase.from('face_profiles').select('*').eq('status', 'ATIVO');
-      if (!empErr && emps) {
-        return emps.map(e => {
-          const profile = faces?.find(f => f.employee_id === e.id);
-          return {
-            ...e,
-            has_face_profile: Boolean(profile),
-            photo_preview: profile?.photo_preview,
-          };
-        });
+      try {
+        const { data: emps, error: empErr } = await supabase.from('employees').select('*').order('full_name');
+        const { data: faces } = await supabase.from('face_profiles').select('*').eq('status', 'ATIVO');
+        
+        if (!empErr && emps) {
+          return emps.map(e => {
+            const profile = faces?.find(f => f.employee_id === e.id) || localFaces.find(f => f.employee_id === e.id);
+            return {
+              ...e,
+              has_face_profile: Boolean(profile),
+              photo_preview: profile?.photo_preview,
+            };
+          });
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar colaboradores do Supabase, usando local:', err);
       }
     }
+
     const emps = getStored<Employee>(STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES);
-    const faces = getStored<FaceProfile>(STORAGE_KEYS.FACE_PROFILES, INITIAL_FACE_PROFILES);
     return emps.map(e => {
-      const profile = faces.find(f => f.employee_id === e.id && f.status === 'ATIVO');
+      const profile = localFaces.find(f => f.employee_id === e.id && f.status === 'ATIVO');
       return {
         ...e,
         has_face_profile: Boolean(profile),
@@ -92,28 +99,34 @@ export const dbService = {
   },
 
   async saveEmployee(emp: Partial<Employee> & { full_name: string; cpf: string; employee_code: string }): Promise<Employee> {
+    let supabaseSaved: any = null;
+
     if (isSupabaseConfigured && supabase) {
-      if (emp.id) {
-        const { data } = await supabase.from('employees').update({
-          full_name: emp.full_name,
-          cpf: emp.cpf,
-          employee_code: emp.employee_code,
-          department: emp.department,
-          role: emp.role,
-          status: emp.status,
-          updated_at: new Date().toISOString(),
-        }).eq('id', emp.id).select().single();
-        if (data) return data;
-      } else {
-        const { data } = await supabase.from('employees').insert({
-          full_name: emp.full_name,
-          cpf: emp.cpf,
-          employee_code: emp.employee_code,
-          department: emp.department,
-          role: emp.role,
-          status: emp.status || 'ATIVO',
-        }).select().single();
-        if (data) return data;
+      try {
+        if (emp.id) {
+          const { data } = await supabase.from('employees').update({
+            full_name: emp.full_name,
+            cpf: emp.cpf,
+            employee_code: emp.employee_code,
+            department: emp.department,
+            role: emp.role,
+            status: emp.status,
+            updated_at: new Date().toISOString(),
+          }).eq('id', emp.id).select().single();
+          supabaseSaved = data;
+        } else {
+          const { data } = await supabase.from('employees').insert({
+            full_name: emp.full_name,
+            cpf: emp.cpf,
+            employee_code: emp.employee_code,
+            department: emp.department,
+            role: emp.role,
+            status: emp.status || 'ATIVO',
+          }).select().single();
+          supabaseSaved = data;
+        }
+      } catch (err) {
+        console.warn('Erro ao salvar no Supabase:', err);
       }
     }
 
@@ -130,7 +143,7 @@ export const dbService = {
       }
     }
 
-    const newEmp: Employee = {
+    const newEmp: Employee = supabaseSaved || {
       id: crypto.randomUUID(),
       employee_code: emp.employee_code || `MP-${Math.floor(1000 + Math.random() * 9000)}`,
       full_name: emp.full_name,
@@ -150,12 +163,13 @@ export const dbService = {
 
   async deleteEmployee(id: string): Promise<boolean> {
     if (isSupabaseConfigured && supabase) {
-      await supabase.from('face_profiles').delete().eq('employee_id', id);
-      await supabase.from('time_records').delete().eq('employee_id', id);
-      await supabase.from('work_sessions').delete().eq('employee_id', id);
-      const { error } = await supabase.from('employees').delete().eq('id', id);
-      if (error) {
-        console.error('Erro ao excluir no Supabase:', error);
+      try {
+        await supabase.from('face_profiles').delete().eq('employee_id', id);
+        await supabase.from('time_records').delete().eq('employee_id', id);
+        await supabase.from('work_sessions').delete().eq('employee_id', id);
+        await supabase.from('employees').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Erro ao excluir no Supabase:', err);
       }
     }
 
@@ -184,7 +198,11 @@ export const dbService = {
       emps[idx].updated_at = new Date().toISOString();
       setStored(STORAGE_KEYS.EMPLOYEES, emps);
       if (isSupabaseConfigured && supabase) {
-        await supabase.from('employees').update({ status: newStatus }).eq('id', id);
+        try {
+          await supabase.from('employees').update({ status: newStatus }).eq('id', id);
+        } catch (err) {
+          console.warn('Erro ao atualizar status no Supabase:', err);
+        }
       }
       await this.logAudit('STATUS_FUNCIONARIO', { id, status: newStatus }, id);
       return emps[idx];
@@ -193,40 +211,30 @@ export const dbService = {
   },
 
   async getFaceProfile(employeeId: string): Promise<FaceProfile | null> {
-    if (isSupabaseConfigured && supabase) {
-      const { data } = await supabase.from('face_profiles').select('*').eq('employee_id', employeeId).eq('status', 'ATIVO').single();
-      if (data) return data;
-    }
     const profiles = getStored<FaceProfile>(STORAGE_KEYS.FACE_PROFILES, INITIAL_FACE_PROFILES);
-    return profiles.find(p => p.employee_id === employeeId && p.status === 'ATIVO') || null;
+    const localProfile = profiles.find(p => p.employee_id === employeeId && p.status === 'ATIVO');
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase.from('face_profiles').select('*').eq('employee_id', employeeId).eq('status', 'ATIVO').limit(1);
+        if (!error && data && data.length > 0) {
+          return {
+            ...data[0],
+            photo_preview: data[0].photo_preview || localProfile?.photo_preview,
+          };
+        }
+      } catch (err) {
+        console.warn('Erro ao buscar face profile no Supabase:', err);
+      }
+    }
+
+    return localProfile || null;
   },
 
   async saveFaceProfile(employeeId: string, descriptor: number[], photoPreview?: string): Promise<FaceProfile> {
     const nowIso = new Date().toISOString();
-    if (isSupabaseConfigured && supabase) {
-      // Verifica se já existe um perfil gravado para atualizar ou inserir
-      const { data: existing } = await supabase.from('face_profiles').select('*').eq('employee_id', employeeId).single();
-      if (existing) {
-        const { data } = await supabase.from('face_profiles').update({
-          descriptor,
-          photo_preview: photoPreview || existing.photo_preview || null,
-          status: 'ATIVO',
-          updated_at: nowIso,
-        }).eq('id', existing.id).select().single();
-        if (data) return data;
-      } else {
-        const { data } = await supabase.from('face_profiles').insert({
-          employee_id: employeeId,
-          provider_reference: 'mp_biometrics_v1',
-          template_version: 'v1.0',
-          descriptor,
-          photo_preview: photoPreview || null,
-          status: 'ATIVO',
-        }).select().single();
-        if (data) return data;
-      }
-    }
 
+    // 1. Grava no LocalStorage imediatamente para garantir resposta instantânea
     const profiles = getStored<FaceProfile>(STORAGE_KEYS.FACE_PROFILES, INITIAL_FACE_PROFILES);
     const existingIdx = profiles.findIndex(p => p.employee_id === employeeId);
 
@@ -248,31 +256,76 @@ export const dbService = {
       profiles.push(profileData);
     }
     setStored(STORAGE_KEYS.FACE_PROFILES, profiles);
+
+    // Atualiza a flag has_face_profile no cache de funcionários
+    const emps = getStored<Employee>(STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES);
+    const empIdx = emps.findIndex(e => e.id === employeeId);
+    if (empIdx >= 0) {
+      emps[empIdx].has_face_profile = true;
+      emps[empIdx].photo_preview = profileData.photo_preview;
+      setStored(STORAGE_KEYS.EMPLOYEES, emps);
+    }
+
+    // 2. Sincroniza com o Supabase de forma resiliente
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: existingList } = await supabase.from('face_profiles').select('id').eq('employee_id', employeeId).limit(1);
+        if (existingList && existingList.length > 0) {
+          await supabase.from('face_profiles').update({
+            descriptor,
+            photo_preview: photoPreview || null,
+            status: 'ATIVO',
+            updated_at: nowIso,
+          }).eq('id', existingList[0].id);
+        } else {
+          await supabase.from('face_profiles').insert({
+            employee_id: employeeId,
+            provider_reference: 'mp_biometrics_v1',
+            template_version: 'v1.0',
+            descriptor,
+            photo_preview: photoPreview || null,
+            status: 'ATIVO',
+          });
+        }
+      } catch (err) {
+        console.warn('Erro ao sincronizar face_profile no Supabase:', err);
+      }
+    }
+
     await this.logAudit('CADASTRO_BIOMETRIA_FACIAL', { employee_id: employeeId, dim: descriptor.length }, employeeId);
     return profileData;
   },
 
   async getDevices(): Promise<Device[]> {
     if (isSupabaseConfigured && supabase) {
-      const { data } = await supabase.from('devices').select('*').order('created_at', { ascending: false });
-      if (data) return data;
+      try {
+        const { data } = await supabase.from('devices').select('*').order('created_at', { ascending: false });
+        if (data) return data;
+      } catch (err) {
+        console.warn('Erro ao buscar dispositivos no Supabase:', err);
+      }
     }
     return getStored<Device>(STORAGE_KEYS.DEVICES, INITIAL_DEVICES);
   },
 
   async getOrCreateCurrentDevice(identifier: string, defaultName: string): Promise<Device> {
     if (isSupabaseConfigured && supabase) {
-      const { data: existing } = await supabase.from('devices').select('*').eq('device_identifier', identifier).single();
-      if (existing) {
-        await supabase.from('devices').update({ last_seen: new Date().toISOString() }).eq('id', existing.id);
-        return existing;
+      try {
+        const { data: existingList } = await supabase.from('devices').select('*').eq('device_identifier', identifier).limit(1);
+        if (existingList && existingList.length > 0) {
+          const existing = existingList[0];
+          await supabase.from('devices').update({ last_seen: new Date().toISOString() }).eq('id', existing.id);
+          return existing;
+        }
+        const { data: created } = await supabase.from('devices').insert({
+          device_name: defaultName,
+          device_identifier: identifier,
+          status: 'ATIVO',
+        }).select().single();
+        if (created) return created;
+      } catch (err) {
+        console.warn('Erro ao gerenciar dispositivo no Supabase:', err);
       }
-      const { data: created } = await supabase.from('devices').insert({
-        device_name: defaultName,
-        device_identifier: identifier,
-        status: 'ATIVO',
-      }).select().single();
-      if (created) return created;
     }
 
     const devices = getStored<Device>(STORAGE_KEYS.DEVICES, INITIAL_DEVICES);
@@ -301,8 +354,12 @@ export const dbService = {
 
   async updateDeviceStatus(deviceId: string, status: DeviceStatus): Promise<Device | null> {
     if (isSupabaseConfigured && supabase) {
-      const { data } = await supabase.from('devices').update({ status, updated_at: new Date().toISOString() }).eq('id', deviceId).select().single();
-      if (data) return data;
+      try {
+        const { data } = await supabase.from('devices').update({ status, updated_at: new Date().toISOString() }).eq('id', deviceId).select().single();
+        if (data) return data;
+      } catch (err) {
+        console.warn('Erro ao atualizar dispositivo no Supabase:', err);
+      }
     }
 
     const devices = getStored<Device>(STORAGE_KEYS.DEVICES, INITIAL_DEVICES);
@@ -319,11 +376,15 @@ export const dbService = {
 
   async getTimeRecords(filters?: { employeeId?: string; date?: string }): Promise<TimeRecord[]> {
     if (isSupabaseConfigured && supabase) {
-      let query = supabase.from('time_records').select('*, employee:employees(*), device:devices(*)').order('recorded_at', { ascending: false });
-      if (filters?.employeeId) query = query.eq('employee_id', filters.employeeId);
-      if (filters?.date) query = query.gte('recorded_at', `${filters.date}T00:00:00`).lte('recorded_at', `${filters.date}T23:59:59`);
-      const { data } = await query;
-      if (data) return data;
+      try {
+        let query = supabase.from('time_records').select('*, employee:employees(*), device:devices(*)').order('recorded_at', { ascending: false });
+        if (filters?.employeeId) query = query.eq('employee_id', filters.employeeId);
+        if (filters?.date) query = query.gte('recorded_at', `${filters.date}T00:00:00`).lte('recorded_at', `${filters.date}T23:59:59`);
+        const { data } = await query;
+        if (data) return data;
+      } catch (err) {
+        console.warn('Erro ao buscar registros no Supabase:', err);
+      }
     }
 
     let records = getStored<TimeRecord>(STORAGE_KEYS.TIME_RECORDS, INITIAL_TIME_RECORDS);
@@ -349,8 +410,12 @@ export const dbService = {
   async getWorkSession(employeeId: string, dateStr?: string): Promise<WorkSession | null> {
     const targetDate = dateStr || new Date().toISOString().split('T')[0];
     if (isSupabaseConfigured && supabase) {
-      const { data } = await supabase.from('work_sessions').select('*').eq('employee_id', employeeId).eq('session_date', targetDate).single();
-      if (data) return data;
+      try {
+        const { data } = await supabase.from('work_sessions').select('*').eq('employee_id', employeeId).eq('session_date', targetDate).limit(1);
+        if (data && data.length > 0) return data[0];
+      } catch (err) {
+        console.warn('Erro ao buscar jornada no Supabase:', err);
+      }
     }
     const sessions = getStored<WorkSession>(STORAGE_KEYS.WORK_SESSIONS, INITIAL_WORK_SESSIONS);
     return sessions.find(s => s.employee_id === employeeId && s.session_date === targetDate) || null;
@@ -373,38 +438,42 @@ export const dbService = {
     const idempotencyKey = data.idempotency_key || crypto.randomUUID();
 
     if (isSupabaseConfigured && supabase) {
-      const { data: record } = await supabase.from('time_records').insert({
-        employee_id: data.employee_id,
-        device_id: data.device_id,
-        record_type: data.record_type,
-        recorded_at: recordedAt,
-        latitude: data.latitude,
-        longitude: data.longitude,
-        location_accuracy: data.location_accuracy,
-        location_address: data.location_address || 'Salvador - BA',
-        verification_method: 'FACIAL_LIVENESS',
-        verification_status: 'VALIDADO',
-        verification_score: data.verification_score ?? 0.98,
-        sync_status: data.sync_status || 'SINCRONIZADO',
-        idempotency_key: idempotencyKey,
-      }).select().single();
+      try {
+        const { data: record } = await supabase.from('time_records').insert({
+          employee_id: data.employee_id,
+          device_id: data.device_id,
+          record_type: data.record_type,
+          recorded_at: recordedAt,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          location_accuracy: data.location_accuracy,
+          location_address: data.location_address || 'Salvador - BA',
+          verification_method: 'FACIAL_LIVENESS',
+          verification_status: 'VALIDADO',
+          verification_score: data.verification_score ?? 0.98,
+          sync_status: data.sync_status || 'SINCRONIZADO',
+          idempotency_key: idempotencyKey,
+        }).select().single();
 
-      const sessionDate = recordedAt.split('T')[0];
-      let status: any = 'EM_JORNADA';
-      const sessionUpdate: any = { updated_at: new Date().toISOString() };
-      if (data.record_type === 'ENTRADA') { sessionUpdate.started_at = recordedAt; status = 'EM_JORNADA'; }
-      if (data.record_type === 'INICIO_INTERVALO') { sessionUpdate.break_started_at = recordedAt; status = 'EM_INTERVALO'; }
-      if (data.record_type === 'RETORNO_INTERVALO') { sessionUpdate.break_ended_at = recordedAt; status = 'EM_JORNADA'; }
-      if (data.record_type === 'SAIDA') { sessionUpdate.ended_at = recordedAt; status = 'FINALIZADA'; }
-      sessionUpdate.status = status;
+        const sessionDate = recordedAt.split('T')[0];
+        let status: any = 'EM_JORNADA';
+        const sessionUpdate: any = { updated_at: new Date().toISOString() };
+        if (data.record_type === 'ENTRADA') { sessionUpdate.started_at = recordedAt; status = 'EM_JORNADA'; }
+        if (data.record_type === 'INICIO_INTERVALO') { sessionUpdate.break_started_at = recordedAt; status = 'EM_INTERVALO'; }
+        if (data.record_type === 'RETORNO_INTERVALO') { sessionUpdate.break_ended_at = recordedAt; status = 'EM_JORNADA'; }
+        if (data.record_type === 'SAIDA') { sessionUpdate.ended_at = recordedAt; status = 'FINALIZADA'; }
+        sessionUpdate.status = status;
 
-      const { data: session } = await supabase.from('work_sessions').upsert({
-        employee_id: data.employee_id,
-        session_date: sessionDate,
-        ...sessionUpdate,
-      }, { onConflict: 'employee_id,session_date' }).select().single();
+        const { data: session } = await supabase.from('work_sessions').upsert({
+          employee_id: data.employee_id,
+          session_date: sessionDate,
+          ...sessionUpdate,
+        }, { onConflict: 'employee_id,session_date' }).select().single();
 
-      return { record: record || {} as any, session: session || {} as any };
+        return { record: record || {} as any, session: session || {} as any };
+      } catch (err) {
+        console.warn('Erro ao criar registro no Supabase, gravando local:', err);
+      }
     }
 
     const records = getStored<TimeRecord>(STORAGE_KEYS.TIME_RECORDS, INITIAL_TIME_RECORDS);
@@ -496,12 +565,16 @@ export const dbService = {
     adminUser = 'Administrador Kaian'
   ): Promise<TimeRecord | null> {
     if (isSupabaseConfigured && supabase) {
-      const { data } = await supabase.from('time_records').update({
-        recorded_at: newRecordedAt,
-        is_corrected: true,
-        correction_reason: reason,
-      }).eq('id', recordId).select().single();
-      return data;
+      try {
+        const { data } = await supabase.from('time_records').update({
+          recorded_at: newRecordedAt,
+          is_corrected: true,
+          correction_reason: reason,
+        }).eq('id', recordId).select().single();
+        if (data) return data;
+      } catch (err) {
+        console.warn('Erro ao corrigir ponto no Supabase:', err);
+      }
     }
 
     const records = getStored<TimeRecord>(STORAGE_KEYS.TIME_RECORDS, INITIAL_TIME_RECORDS);
@@ -538,8 +611,12 @@ export const dbService = {
 
   async getAuditLogs(): Promise<AuditLog[]> {
     if (isSupabaseConfigured && supabase) {
-      const { data } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false });
-      if (data) return data;
+      try {
+        const { data } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false });
+        if (data) return data;
+      } catch (err) {
+        console.warn('Erro ao buscar logs no Supabase:', err);
+      }
     }
     const logs = getStored<AuditLog>(STORAGE_KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS);
     const emps = await this.getEmployees();
@@ -560,14 +637,18 @@ export const dbService = {
     userId = 'admin-kaian'
   ): Promise<void> {
     if (isSupabaseConfigured && supabase) {
-      await supabase.from('audit_logs').insert({
-        user_id: userId,
-        employee_id: employeeId || null,
-        action,
-        device_id: deviceId || null,
-        metadata,
-      });
-      return;
+      try {
+        await supabase.from('audit_logs').insert({
+          user_id: userId,
+          employee_id: employeeId || null,
+          action,
+          device_id: deviceId || null,
+          metadata,
+        });
+        return;
+      } catch (err) {
+        console.warn('Erro ao gravar log no Supabase:', err);
+      }
     }
 
     const logs = getStored<AuditLog>(STORAGE_KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS);
@@ -587,9 +668,21 @@ export const dbService = {
   async getDashboardStats() {
     const employees = await this.getEmployees();
     const today = new Date().toISOString().split('T')[0];
-    const sessions = (isSupabaseConfigured && supabase
-      ? (await supabase.from('work_sessions').select('*').eq('session_date', today)).data || []
-      : getStored<WorkSession>(STORAGE_KEYS.WORK_SESSIONS, INITIAL_WORK_SESSIONS).filter(s => s.session_date === today));
+    let sessions: any[] = [];
+    
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data } = await supabase.from('work_sessions').select('*').eq('session_date', today);
+        sessions = data || [];
+      } catch (err) {
+        console.warn('Erro ao buscar stats no Supabase:', err);
+      }
+    }
+
+    if (sessions.length === 0) {
+      sessions = getStored<WorkSession>(STORAGE_KEYS.WORK_SESSIONS, INITIAL_WORK_SESSIONS).filter(s => s.session_date === today);
+    }
+
     const todayRecords = await this.getTimeRecords({ date: today });
 
     const totalEmployees = employees.filter(e => e.status === 'ATIVO').length;
